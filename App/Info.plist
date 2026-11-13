@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+    <key>CFBundleExecutable</key><string>Notcher</string>
+    <key>CFBundleIdentifier</key><string>fr.notcher.app</string>
+    <key>CFBundleName</key><string>Notcher</string>
+    <key>CFBundleDisplayName</key><string>Notcher</string>
+    <key>CFBundlePackageType</key><string>APPL</string>
+    <key>CFBundleShortVersionString</key><string>1.0.0</string>
+    <key>CFBundleVersion</key><string>6</string>
+    <key>CFBundleIconFile</key><string>Notcher</string>
+    <key>LSMinimumSystemVersion</key><string>14.0</string>
+    <key>LSUIElement</key><true/>
+    <key>NSHighResolutionCapable</key><true/>
+    <key>NSPrincipalClass</key><string>NSApplication</string>
+    <key>NSCameraUsageDescription</key><string>Afficher votre caméra dans le miroir du notch, uniquement lorsque vous l'activez. Aucune image n'est enregistrée.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>Afficher vos prochains événements et ouvrir les liens de réunion depuis le notch.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Afficher et contrôler la lecture de Spotify et Apple Music.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>Afficher les appareils Bluetooth connectés.</string>
+    <key>NSHumanReadableCopyright</key><string>Notcher — application indépendante.</string>
+</dict></plist>

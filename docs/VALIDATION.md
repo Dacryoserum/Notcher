@@ -1,0 +1,34 @@
+# Validation sur un Mac
+
+Le cœur, les intégrations simulées et la compilation se vérifient avec `Scripts/test.sh` et `Scripts/build.sh`. Les vérifications suivantes demandent une session graphique et les applications correspondantes ; elles ne doivent pas être déduites du succès des tests unitaires.
+
+- Ouvrir `dist/Notcher.app` depuis le Finder. Vérifier le survol, le clic, ⌘⇧Espace, Échap, l’épinglage, le changement d’espace et le plein écran.
+- Version 0.4 : lancer Spotify, autoriser l’automatisation, mettre en pause depuis Notcher puis directement dans Spotify. Le compteur, le curseur et l’indicateur doivent s’arrêter ; alterner rapidement pause/lecture puis changer de morceau. Vérifier aussi la reprise et le déplacement dans la piste. Refuser la permission doit laisser une erreur compréhensible, sans bloquer le panneau.
+- Texte : écrire dans les trois formes à droite, revenir sur chacune, ajouter une fiche avec +. Vérifier le curseur, le défilement et ⌘Z/⇧⌘Z propres à chaque fiche, ainsi que copier/coller. Tester une fiche vide en cliquant en bas de sa zone d’édition, du texte long et une composition IME. Quitter puis relancer doit restaurer les contenus et la fiche sélectionnée.
+- Ouvrir/replier rapidement pendant la lecture et l’édition, puis revenir dans une autre app : le clavier ne doit jamais écrire dans une fiche masquée. Vérifier les inversions d’animation sur écran 60 Hz et ProMotion, et avec Réduire les animations activé. Le Bluetooth et le prompteur doivent s’arrêter au repli.
+- Version 0.3 : clic droit et Ctrl-clic sur le notch fermé puis ouvert → « Quitter Notcher ». Le processus doit se terminer, avec sauvegarde des notes et arrêt des services. Annuler le menu ne doit pas laisser le panneau bloqué ouvert.
+- Au repos, vérifier la pochette seule à gauche, la lecture ou le Pomodoro à droite, sans batterie. Passer lecture → pause → arrêt, lancer un minuteur, modifier le volume : le bord inférieur fermé doit rester à la même hauteur que l’encoche, y compris pendant les transitions de largeur.
+- Spotify : accepter l’autorisation d’automatisation, vérifier une pochette puis changer rapidement de morceau. Vérifier pause/reprise, arrêt/relancement, refus de permission, réseau absent et retour sur un morceau déjà écouté ; aucune ancienne pochette ne doit rester sous un nouveau titre.
+- Agenda : naviguer entre mois, sélectionner un jour, revenir à aujourd’hui, vérifier les couleurs, les événements en cours et le bouton Rejoindre. Tester un événement nocturne et une journée entière : une fin à minuit n’ajoute pas l’événement au jour suivant. Le raccourci Agenda de l’aperçu doit ouvrir cet outil.
+- Version 0.2 : vérifier que le bord supérieur reste fixe pendant le dépliage et le repli, y compris lors d’inversions rapides. Cliquer sur les marges des onglets, puis quitter le panneau : il doit se replier lorsqu’il n’est ni épinglé ni en cours d’édition.
+- Dans Apparence, tester les trois dispositions, les deux tailles et la navigation avec/sans texte. Choisir une couleur libre, notamment sombre, puis relancer pour vérifier la conservation des réglages.
+- Ouvrir Système et refermer immédiatement. Répéter pendant une actualisation Bluetooth ; la navigation et le chevron de repli doivent rester utilisables. Une erreur matérielle doit rester limitée au service concerné.
+- Brancher/débrancher un écran ; choisir l’écran dans les réglages. Vérifier l’alignement de part et d’autre du notch physique.
+- Lire une piste dans Spotify puis Pistolame ; vérifier titre, état de lecture, pause, précédent/suivant et déplacement. Refaire dans Apple Music et un navigateur compatible. Une commande non prise en charge par le lecteur ne doit pas être présentée comme confirmée.
+- Modifier le volume avec les touches du clavier, choisir une sortie audio, tester une sortie sans volume logiciel. Vérifier que le maintien éveillé se désactive à la fermeture de Notcher.
+- Déposer deux fichiers portant le même nom, un dossier et du texte. Exporter les copies par glisser-déposer, utiliser Quick Look et AirDrop. Retirer une copie puis vérifier l’original. Épingler avant un nettoyage.
+- Modifier une note, changer d’onglet, fermer puis rouvrir l’app. Vérifier la restauration et l’export. Tester le refus d’un JSON/Base64 invalide sans destruction du texte.
+- Connecter Claude dans l’app, relancer Claude Code puis recevoir une réponse. Vérifier les quotas réellement transmis et retirer l’intégration. Tester aussi une barre d’état préexistante.
+- Connecter un CLI Codex authentifié. Comparer les fenêtres avec `/status`, rafraîchir, déconnecter. Tester l’absence de CLI, un compte sans quotas et un réseau indisponible.
+- Démarrer un minuteur court, mettre le Mac en veille puis le réveiller. La fin doit être notifiée une fois. Vérifier la reprise après relancement de l’app.
+- Autoriser puis refuser calendrier et caméra. La caméra doit s’éteindre en changeant d’outil ou en refermant le notch. Vérifier les liens de réunions récurrents.
+- Activer l’historique, copier du texte, le recopier depuis l’historique. Désactiver et vérifier l’effacement. Tester un contenu portant un marqueur confidentiel.
+- Lancer un raccourci bénin, convertir une image et tester le prompteur. Vérifier les messages d’erreur et les chemins contenant espaces/apostrophes.
+
+La session de développement outillée n’a pas pu ouvrir de fenêtre AppKit (`NSApplication` / LaunchServices indisponibles dans son confinement). Les validations graphiques et les contrôles réels de Spotify/Pistolame restent donc à effectuer dans la session utilisateur.
+
+Validation automatique 0.3 : 50 tests réussis. La passerelle JXA a été compilée avec `osacompile`. La tentative d’ouverture de NotchNook via LaunchServices a également échoué dans cet environnement (`-10827`), donc aucune comparaison visuelle en direct n’est revendiquée.
+
+Validation automatique 0.4 : 66 tests réussis, dont les régressions Spotify et les fiches. La cadence réelle et les interactions AppKit demandent toujours une session graphique ; les tests à 60/120 Hz portent sur le calcul du mouvement, pas sur une mesure de FPS du Mac.
+
+Version 0.4.1 : le crash à l’ouverture de Texte a été confirmé dans les rapports macOS puis reproduit par `EditorTests` : appel d’un initialiseur `SheetTextView.init(frame:textContainer:)` non implémenté. L’éditeur implémente maintenant les initialiseurs AppKit et conserve explicitement son stockage, son gestionnaire de disposition et son conteneur TextKit. Les quatre tests natifs vérifient la création, la saisie, l’indépendance de l’annulation et les dimensions d’une fiche vide pendant le redimensionnement. Ils réussissent après correction. La pochette du notch fermé est centrée dans l’aile gauche avec des marges symétriques.
