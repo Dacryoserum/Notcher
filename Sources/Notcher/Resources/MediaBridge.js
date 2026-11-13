@@ -51,7 +51,8 @@ function run(argv) {
                 playing: String(player.playerState()).toLowerCase() === 'playing',
                 duration: finite(song.duration()) / 1000,
                 elapsed: finite(player.playerPosition()), artwork: null,
-                artworkURL: (typeof cover === 'string' && cover.indexOf('https://') === 0) ? cover : null
+                // Some Spotify versions still publish the cover as plain http; the same host serves https.
+                artworkURL: typeof cover !== 'string' ? null : cover.indexOf('https://') === 0 ? cover : cover.indexOf('http://') === 0 ? 'https://' + cover.substring(7) : null
             };
             if (!state.title || id !== player.currentTrack.id()) return 'null';
             return JSON.stringify(state);

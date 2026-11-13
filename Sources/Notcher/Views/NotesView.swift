@@ -17,6 +17,7 @@ struct NotesView: View {
                 TextField("Sans titre", text: Binding(get: { notes.selected.map { $0.title == "Sans titre" ? "" : $0.title } ?? "" }, set: { notes.update(id: id, title: $0) }))
                     .textFieldStyle(.plain).font(.system(size: 15, weight: .medium))
                 Spacer()
+                IconButton(symbol: "square.and.arrow.up.on.square", help: "Envoyer vers Notes", tint: notes.sending ? accent : .secondary) { model.sendSelectedNoteToNotes() }.disabled(notes.sending)
                 IconButton(symbol: "square.and.arrow.up", help: "Exporter la fiche") { model.dialogOpen = true; notes.export { model.dialogOpen = false } }
                 IconButton(symbol: "trash", help: "Supprimer la fiche") { confirmDelete = true }
             }

@@ -39,6 +39,12 @@ struct NotchActivity: Equatable {
     var title: String
     var value: Double?
     var color: Color?
+    /// Picture shown instead of the symbol (the connected headphones, for instance).
+    var artwork: NSImage? = nil
+    /// Short text for the right wing when there is no gauge.
+    var trailing: String? = nil
+    /// Extra line under the notch; the closed panel grows to hold it.
+    var details: [String] = []
 }
 
 @MainActor final class AppModel: ObservableObject {
@@ -84,10 +90,12 @@ struct NotchActivity: Equatable {
                           activity: activity != nil, idleInfo: preferences.compactStyle == .info, hovered: hovering)
     }
     var targetSize: CGSize { CGSize(width: width, height: height) }
+    /// Height of the strip under the closed notch that holds an activity's details.
+    static let detailHeight: CGFloat = 26
     var visibleTabs: [NotchTab] { NotchTab.allCases.filter { $0 == .home || !preferences.hiddenTabs.contains($0.key) } }
     var collapsedWidth: CGFloat { collapsedSize.width }
     var width: CGFloat { expanded ? expandedWidth : collapsedWidth }
-    var height: CGFloat { expanded ? notchHeight + pageHeight + 84 : collapsedSize.height }
+    var height: CGFloat { expanded ? notchHeight + pageHeight + 84 : collapsedSize.height + (activity?.details.isEmpty == false ? Self.detailHeight : 0) }
 
     func start() {
         agents.onLimit = { [weak self] title in self?.showActivity(.init(symbol: "sparkles", title: title, color: .orange), seconds: 6) }
@@ -101,6 +109,7 @@ struct NotchActivity: Equatable {
             let level = self.system.battery.map { Double($0) / 100 }
             self.showActivity(.init(symbol: charging ? "bolt.fill" : "battery.75percent", title: charging ? "En charge" : "Sur batterie", value: level), seconds: 3)
         }
+        system.onHeadphones = { [weak self] name in self?.announceHeadphones(name) }
         // A new song is named in the closed notch for a moment; the first one seen at launch is not news.
         media.$track.sink { [weak self] track in
             guard let self else { return }
@@ -159,6 +168,29 @@ struct NotchActivity: Equatable {
         tab = value
         if value != .tools { camera.stop() }
         Haptics.play(.alignment)
+    }
+    func sendSelectedNoteToNotes() {
+        notes.sendToNotes { [weak self] failure in self?.notify(failure ?? "Envoyé vers Notes") }
+    }
+    /// Headphones that just connected appear in the notch at once; their battery follows when macOS knows it.
+    private func announceHeadphones(_ name: String) {
+        guard preferences.showHUD else { return }
+        var card = NotchActivity(symbol: Accessory.symbol(productID: nil, name: name), title: name, artwork: Accessory.image(productID: nil, name: name))
+        showActivity(card, seconds: 5)
+        Task { [weak self] in
+            for attempt in 0..<3 {
+                if attempt > 0 { do { try await Task.sleep(for: .seconds(2)) } catch { return } }
+                guard let self, self.activity?.title == name else { return }
+                guard let info = await Accessory.lookup(name: name) else { continue }
+                card.symbol = Accessory.symbol(productID: info.productID, name: name)
+                card.artwork = Accessory.image(productID: info.productID, name: name) ?? card.artwork
+                card.trailing = info.summary.map { "\($0) %" }
+                card.details = info.details
+                guard self.activity?.title == name else { return }
+                self.showActivity(card, seconds: 5)
+                if info.summary != nil { return }
+            }
+        }
     }
     func showActivity(_ value: NotchActivity, seconds: Double) {
         activityTask?.cancel(); activity = value

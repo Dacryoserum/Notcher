@@ -531,7 +531,7 @@ private struct BehaviorPane: View {
                             if value { Haptics.enabled = true; Haptics.play(.levelChange) }
                         }))
                     }
-                    SettingRow(symbol: "speaker.wave.2", title: "Indicateurs dans le notch", subtitle: "Niveau du volume à chaque appui, et batterie au branchement du chargeur.", divider: false) {
+                    SettingRow(symbol: "speaker.wave.2", title: "Indicateurs dans le notch", subtitle: "Volume à chaque appui, batterie au branchement du chargeur, écouteurs à leur connexion.", divider: false) {
                         Switch(title: "Indicateurs dans le notch", isOn: $preferences.showHUD)
                     }
                 }
@@ -649,33 +649,37 @@ private struct ServicesPane: View {
 
 // MARK: - Widgets
 
-/// Composes the overview: drag to move, resize, remove, add, and choose which row is the tall one.
+/// Composes the overview on its real grid: drag a widget to move it, drag its corner to resize it.
 private struct WidgetsPane: View {
     @Environment(\.notcherAccent) private var accent
     @ObservedObject var preferences: Preferences
-    @State private var target: String?
+    private struct Drag: Equatable { var widget: HomeWidget; var resizing: Bool; var start: CGPoint; var translation: CGSize }
+    @State private var drag: Drag?
     @State private var notice: String?
     private var layout: HomeLayout { preferences.homeLayout }
-    private let canvas = CGSize(width: 664, height: 250)
+    /// Same proportions as the page of the real panel.
+    private let board = CGSize(width: 640, height: 327)
+    private let gap: CGFloat = 8
+
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             if preferences.dashboardLayout != .overview {
                 HStack(spacing: 12) {
                     Image(systemName: "info.circle").foregroundStyle(accent)
-                    Text(L("L’aperçu utilise la disposition « %@ ». Les widgets s’affichent avec la disposition « Complet ».", preferences.dashboardLayout.title)).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("L’aperçu utilise la disposition « \(preferences.dashboardLayout.title) ». Les widgets s’affichent avec la disposition « Complet ».").font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     CapsuleButton(title: "Utiliser Complet", primary: true) { preferences.dashboardLayout = .overview }
                 }.padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.border))
             }
-            SettingsGroup(title: "Ton aperçu", hint: "Glisse un widget pour le déplacer") {
-                board
-                Text(L(notice ?? "Chaque rangée accepte jusqu’à trois widgets. Un widget large prend deux fois la place d’un étroit, et son contenu s’adapte à sa taille."))
+            SettingsGroup(title: "Ton aperçu", hint: "Glisse un widget pour le déplacer, son coin pour le redimensionner") {
+                grid
+                Text(L(notice ?? "Chaque widget occupe le nombre de cases que tu lui donnes, d’une seule case à tout l’aperçu, et son contenu s’adapte : plus il est grand, plus il en montre."))
                     .font(.system(size: 11)).foregroundStyle(notice == nil ? Color.secondary : Theme.orange).fixedSize(horizontal: false, vertical: true)
             }
-            SettingsGroup(title: "Ajouter", hint: layout.available.isEmpty ? "Tous les widgets sont déjà sur l’aperçu" : "Clique, ou glisse vers une rangée") {
+            SettingsGroup(title: "Ajouter", hint: layout.available.isEmpty ? "Tous les widgets sont déjà sur l’aperçu" : "Clique : le widget prend la première place libre") {
                 FlowRow(spacing: 8) {
                     ForEach(layout.available) { widget in
-                        Button { change { if !$0.add(widget) { notice = "Les deux rangées sont pleines : retire d’abord un widget." } } } label: {
+                        Button { change { if !$0.add(widget) { notice = "Plus de place libre : réduis ou retire d’abord un widget." } } } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: widget.symbol).font(.system(size: 11))
                                 Text(widget.title).font(.system(size: 11, weight: .medium))
@@ -683,17 +687,9 @@ private struct WidgetsPane: View {
                             }
                             .padding(.horizontal, 11).frame(height: 30).foregroundStyle(.white.opacity(0.85))
                             .background(Theme.surface, in: Capsule()).overlay(Capsule().strokeBorder(Theme.border)).contentShape(Capsule())
-                        }.buttonStyle(PressStyle(scale: 0.96)).draggable(widget.rawValue)
-                            .accessibilityLabel(L("Ajouter %@", widget.title))
+                        }.buttonStyle(PressStyle(scale: 0.96)).accessibilityLabel("Ajouter \(widget.title)")
                     }
                 }
-            }
-            SettingsGroup(title: "Hauteur des rangées") {
-                HStack(spacing: 10) {
-                    ForEach(RowBalance.allCases) { balance in
-                        OptionTile(title: balance.title, selected: layout.balance == balance) { change { $0.balance = balance } } art: { BalanceArt(balance: balance) }
-                    }
-                }.disabled(layout.rows[1].isEmpty).opacity(layout.rows[1].isEmpty ? 0.45 : 1)
             }
             renamedTabs
             HStack {
@@ -711,85 +707,100 @@ private struct WidgetsPane: View {
         withAnimation(.snappy(duration: 0.28)) { preferences.homeLayout = copy }
         Haptics.play(.alignment)
     }
-    private var board: some View {
-        // Same proportions as the real panel (320 pt of page), scaled to the miniature.
-        let scale = (canvas.height - 24) / 320
-        let heights = layout.heights(total: 320, spacing: 8 / scale).map { $0 * scale }
-        return VStack(spacing: 8) {
-            ForEach(0..<2, id: \.self) { row in
-                let free = layout.hasRoom(in: row)
-                // The landing strip at the end of a row takes its width from the tiles.
-                let widths = layout.widths(row: row, total: canvas.width - 24 - (free && !layout.rows[row].isEmpty ? 44 : 0), spacing: 8)
-                HStack(spacing: 8) {
-                    ForEach(Array(layout.rows[row].enumerated()), id: \.element.id) { index, tile in
-                        cell(tile, row: row, index: index).frame(width: widths[index])
-                    }
-                    if free { landing(row: row, empty: layout.rows[row].isEmpty) }
-                }.frame(height: layout.rows[row].isEmpty ? 40 : heights[row])
+    /// The layout the current drag would produce, or nil when the place is taken.
+    private func outcome(of drag: Drag) -> HomeLayout? {
+        guard let item = layout.item(drag.widget) else { return nil }
+        let cell = HomeLayout.cellSize(in: board, spacing: gap)
+        let stepX = cell.width + gap, stepY = cell.height + gap
+        let dx = Int((drag.translation.width / stepX).rounded()), dy = Int((drag.translation.height / stepY).rounded())
+        var copy = layout
+        if drag.resizing {
+            let least = item.widget.minimum
+            let width = min(HomeLayout.columns - item.x, max(least.w, item.w + dx)), height = min(HomeLayout.rows - item.y, max(least.h, item.h + dy))
+            return copy.setFrame(item.widget, x: item.x, y: item.y, w: width, h: height) ? copy : nil
+        }
+        let x = min(HomeLayout.columns - item.w, max(0, item.x + dx)), y = min(HomeLayout.rows - item.h, max(0, item.y + dy))
+        if copy.setFrame(item.widget, x: x, y: y, w: item.w, h: item.h) { return copy }
+        // Dropped on another widget: the two trade places.
+        let pointerX = Int(((drag.start.x + drag.translation.width) / stepX).rounded(.down)), pointerY = Int(((drag.start.y + drag.translation.height) / stepY).rounded(.down))
+        guard let other = layout.item(atX: pointerX, y: pointerY), other.widget != item.widget, copy.move(item.widget, toX: pointerX, y: pointerY) else { return nil }
+        return copy
+    }
+    private func gesture(_ widget: HomeWidget, resizing: Bool) -> some Gesture {
+        DragGesture(minimumDistance: 3, coordinateSpace: .named("widget-board"))
+            .onChanged { value in
+                notice = nil
+                drag = Drag(widget: widget, resizing: resizing, start: value.startLocation, translation: value.translation)
+            }
+            .onEnded { value in
+                let last = Drag(widget: widget, resizing: resizing, start: value.startLocation, translation: value.translation)
+                let result = outcome(of: last)
+                drag = nil
+                if let result { change { $0 = result } }
+                else { notice = resizing ? "Pas assez de place pour cette taille : libère d’abord les cases voisines." : "Cette place est prise par un widget qui ne peut pas échanger." }
+            }
+    }
+    private var grid: some View {
+        let preview = drag.flatMap(outcome(of:))
+        let shown = preview ?? layout
+        let blocked = drag != nil && preview == nil
+        return ZStack(alignment: .topLeading) {
+            // The cells themselves, so free room and sizes can be read at a glance.
+            ForEach(0..<(HomeLayout.columns * HomeLayout.rows), id: \.self) { index in
+                let frame = HomeLayout.frame(of: HomeItem(.clock, x: index % HomeLayout.columns, y: index / HomeLayout.columns, w: 1, h: 1), in: board, spacing: gap)
+                RoundedRectangle(cornerRadius: 9).strokeBorder(Color.white.opacity(0.07), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
+                    .frame(width: frame.width, height: frame.height).offset(x: frame.minX, y: frame.minY)
+            }
+            ForEach(shown.items) { item in
+                let frame = HomeLayout.frame(of: item, in: board, spacing: gap)
+                tile(item, active: drag?.widget == item.widget, blocked: blocked && drag?.widget == item.widget)
+                    .frame(width: frame.width, height: frame.height).offset(x: frame.minX, y: frame.minY)
+                    .zIndex(drag?.widget == item.widget ? 1 : 0)
             }
         }
-        .padding(12).frame(width: canvas.width)
+        .frame(width: board.width, height: board.height, alignment: .topLeading)
+        .coordinateSpace(name: "widget-board")
+        .animation(.snappy(duration: 0.2), value: shown)
+        .padding(12)
         .background(.black, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.border))
     }
-    /// Free space at the end of a row: drop a widget here to append it.
-    private func landing(row: Int, empty: Bool) -> some View {
-        let id = "row-\(row)"
-        return RoundedRectangle(cornerRadius: 10).strokeBorder(accent.opacity(target == id ? 0.9 : 0.22), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-            .background(accent.opacity(target == id ? 0.12 : 0), in: RoundedRectangle(cornerRadius: 10))
-            .overlay {
-                if empty { Text("Glisse un widget ici pour créer une seconde rangée").font(.system(size: 10)).foregroundStyle(Theme.muted) }
-                else { Image(systemName: "plus").font(.system(size: 10)).foregroundStyle(accent.opacity(0.6)) }
-            }
-            .frame(maxWidth: empty ? .infinity : 36)
-            .contentShape(Rectangle())
-            .dropDestination(for: String.self) { items, _ in drop(items, row: row, index: layout.rows[row].count) } isTargeted: { inside in target = inside ? id : (target == id ? nil : target) }
-    }
-    private func drop(_ items: [String], row: Int, index: Int) -> Bool {
-        guard let key = items.first, let widget = HomeWidget(rawValue: key) else { return false }
-        var done = false
-        change { done = $0.place(widget, row: row, index: index); if !done { notice = "Cette rangée est pleine : retire d’abord un widget." } }
-        return done
-    }
-    private func cell(_ tile: HomeTile, row: Int, index: Int) -> some View {
-        let widget = tile.widget
-        let active = target == widget.rawValue
+    private func tile(_ item: HomeItem, active: Bool, blocked: Bool) -> some View {
+        let widget = item.widget
+        let tint = blocked ? Theme.orange : accent
         return ZStack {
-            VStack(spacing: 4) {
+            VStack(spacing: 3) {
                 Image(systemName: widget.symbol).font(.system(size: 14))
-                Text(widget.title).font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
-            }.foregroundStyle(accent).padding(.horizontal, 4)
-            VStack {
-                HStack(spacing: 4) {
-                    control(tile.wide ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", L(tile.wide ? "Rendre %@ étroit" : "Rendre %@ large", widget.title)) {
-                        change { $0.setWide(widget, !tile.wide) }
-                    }
-                    Spacer(minLength: 0)
-                    if layout.widgets.count > 1 { control("xmark", L("Retirer %@", widget.title)) { change { $0.remove(widget) } } }
-                }
-                Spacer(minLength: 0)
-            }.padding(5)
+                if item.w > 1 { Text(widget.title).font(.system(size: 10, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8) }
+                Text(verbatim: "\(item.w) × \(item.h)").font(.system(size: 8, design: .monospaced)).opacity(0.6)
+            }.foregroundStyle(tint).padding(.horizontal, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(accent.opacity(active ? 0.28 : 0.12), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(accent.opacity(active ? 1 : 0.28), lineWidth: active ? 1.5 : 1))
+        .background(tint.opacity(active ? 0.26 : 0.12), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(tint.opacity(active ? 1 : 0.3), lineWidth: active ? 1.5 : 1))
         .contentShape(RoundedRectangle(cornerRadius: 10))
-        .draggable(widget.rawValue) {
-            Label(widget.title, systemImage: widget.symbol).font(.system(size: 11, weight: .medium)).padding(.horizontal, 12).frame(height: 30)
-                .foregroundStyle(accent.contrastingText).background(accent, in: Capsule())
+        .gesture(gesture(widget, resizing: false))
+        .overlay(alignment: .topTrailing) {
+            if layout.items.count > 1 {
+                Button { change { $0.remove(widget) } } label: {
+                    Image(systemName: "xmark").font(.system(size: 7, weight: .bold)).foregroundStyle(.white.opacity(0.85))
+                        .frame(width: 16, height: 16).background(.black.opacity(0.55), in: Circle()).contentShape(Circle())
+                }.buttonStyle(PressStyle(scale: 0.85)).padding(3).help(L("Retirer %@", widget.title)).accessibilityLabel(L("Retirer %@", widget.title))
+            }
         }
-        .dropDestination(for: String.self) { items, _ in drop(items, row: row, index: index) } isTargeted: { inside in target = inside ? widget.rawValue : (target == widget.rawValue ? nil : target) }
+        .overlay(alignment: .bottomTrailing) {
+            // The corner grip: drag it to change how many cells the widget covers.
+            Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 7, weight: .bold)).foregroundStyle(tint.contrastingText)
+                .frame(width: 16, height: 16).background(tint, in: RoundedRectangle(cornerRadius: 5))
+                .padding(3).contentShape(Rectangle())
+                .gesture(gesture(widget, resizing: true))
+                .help(L("Glisser pour redimensionner %@", widget.title))
+        }
         .help(L("Glisser pour déplacer %@", widget.title))
-        .accessibilityElement(children: .contain).accessibilityLabel(L("%@, rangée %lld, %@", widget.title, row + 1, L(tile.wide ? "large" : "étroit")))
-    }
-    private func control(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.85))
-                .frame(width: 18, height: 18).background(.black.opacity(0.55), in: Circle()).contentShape(Circle())
-        }.buttonStyle(PressStyle(scale: 0.85)).help(help).accessibilityLabel(help)
+        .accessibilityElement(children: .contain).accessibilityLabel(L("%@, %lld sur %lld cases", widget.title, item.w, item.h))
     }
     /// Tabs whose content is now also a widget get a name that says what only they still offer.
     @ViewBuilder private var renamedTabs: some View {
-        let renamed = NotchTab.allCases.filter { preferences.title(for: $0) != $0.rawValue }
+        let renamed = NotchTab.allCases.filter { preferences.title(for: $0) != L($0.rawValue) }
         if !renamed.isEmpty {
             SettingsGroup(title: "Onglets concernés") {
                 SettingsCard {
@@ -805,17 +816,6 @@ private struct WidgetsPane: View {
                 }
             }
         }
-    }
-}
-private struct BalanceArt: View {
-    @Environment(\.notcherAccent) private var accent
-    let balance: RowBalance
-    var body: some View {
-        let top: CGFloat = balance == .top ? 30 : balance == .even ? 22 : 14
-        VStack(spacing: 4) {
-            RoundedRectangle(cornerRadius: 4).fill(accent.opacity(0.3)).frame(height: top)
-            RoundedRectangle(cornerRadius: 4).fill(accent.opacity(0.3)).frame(height: 44 - top)
-        }.frame(width: 96)
     }
 }
 /// Left-aligned chips that wrap onto as many lines as needed.

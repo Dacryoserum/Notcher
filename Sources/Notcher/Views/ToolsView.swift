@@ -213,9 +213,11 @@ struct SystemView: View {
                             .frame(width: 36, height: 36).background(system.awake ? accent.opacity(0.12) : Theme.raised, in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Éveil").font(.system(size: 12, weight: .medium))
-                            Text(L(system.awake ? "Activé" : "Désactivé")).font(.system(size: 10)).foregroundStyle(.secondary)
+                            if system.awakeUntil != nil { AwakeCountdown(system: system).foregroundStyle(accent) }
+                            else { Text(L(system.awake ? "Activé" : "Désactivé")).font(.system(size: 10)).foregroundStyle(.secondary) }
                         }
                         Spacer()
+                        AwakeSteps(system: system)
                         Toggle("Garder le Mac éveillé", isOn: Binding(get: { system.awake }, set: { _ in system.toggleAwake() })).labelsHidden().toggleStyle(.switch).controlSize(.small)
                     }
                 }
@@ -293,7 +295,7 @@ struct ConverterView: View {
                 if let source { Text(source.lastPathComponent).font(.system(size: 14, weight: .medium)).lineLimit(1) }
                 HStack(spacing: 12) {
                     CapsuleButton(title: "Choisir une image", symbol: "photo") { choose() }
-                    Picker("Format", selection: $format) { ForEach(["PNG", "JPEG", "TIFF", "PDF"], id: \.self) { Text($0) } }.labelsHidden().frame(width: 90)
+                    Picker("Format", selection: $format) { ForEach(["PNG", "JPEG", "WEBP", "TIFF", "PDF"], id: \.self) { Text(verbatim: $0) } }.labelsHidden().frame(width: 90)
                     CapsuleButton(title: busy ? "Conversion…" : "Convertir", primary: true) { convert() }.disabled(source == nil || busy)
                 }
                 ErrorLine(message: error)
@@ -321,6 +323,11 @@ struct ConverterView: View {
                         guard let page = PDFPage(image: image) else { throw CommandError.unavailable }
                         let document = PDFDocument(); document.insert(page, at: 0)
                         guard let pdf = document.dataRepresentation() else { throw CommandError.unavailable }; output = pdf
+                    } else if selectedFormat == "WEBP" {
+                        // macOS reads WebP but cannot write it: the app carries its own lossless encoder.
+                        guard bitmap.pixelsWide * bitmap.pixelsHigh <= 40_000_000, let image = bitmap.cgImage, let pixels = straightARGB(image),
+                              let webp = WebPLossless.encode(width: image.width, height: image.height, pixels: pixels) else { throw CommandError.failed("Cette image est trop grande pour être convertie en WebP.") }
+                        output = webp
                     } else {
                         let type: NSBitmapImageRep.FileType = selectedFormat == "PNG" ? .png : selectedFormat == "JPEG" ? .jpeg : .tiff
                         guard let result = bitmap.representation(using: type, properties: [.compressionFactor: 0.92]) else { throw CommandError.failed("Cette conversion n’est pas disponible.") }; output = result

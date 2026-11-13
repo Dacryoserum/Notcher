@@ -170,7 +170,7 @@ import NotcherCore
     }
     func installClaude() throws {
         try ClaudeIntegration.install()
-        claudeInstalled = true; claudeStatus = "Relance Claude Code pour commencer la synchronisation."
+        claudeInstalled = true; claudeStatus = "Connecté. Les quotas apparaîtront après la prochaine réponse de Claude Code ; une session déjà ouverte doit être relancée."
     }
     func uninstallClaude() throws {
         try ClaudeIntegration.uninstall()

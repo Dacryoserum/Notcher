@@ -14,7 +14,7 @@ struct AgentsView: View {
             }
             HStack(alignment: .top, spacing: 12) {
                 AgentCard(name: "Claude Code", mark: "✳", color: Theme.orange, usage: agents.claude, status: agents.claudeStatus, connected: agents.claudeInstalled, button: "Connecter Claude Code") {
-                    do { try agents.installClaude(); model.notify("Intégration installée. Relance Claude Code.") }
+                    do { try agents.installClaude(); model.notify("Claude Code est connecté. Les quotas arriveront à sa prochaine réponse.") }
                     catch { model.notify(error.localizedDescription) }
                 }
                 AgentCard(name: "Codex", mark: ">_", color: accent, usage: agents.codex, status: agents.codexStatus, connected: model.preferences.codexEnabled, button: agents.refreshing ? "Connexion…" : "Connecter Codex") {

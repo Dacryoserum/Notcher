@@ -3,7 +3,7 @@ import CoreGraphics
 
 /// Everything that can be placed on the overview.
 public enum HomeWidget: String, CaseIterable, Identifiable, Codable, Sendable {
-    case media, focus, volume, agenda, note, clipboard, files, battery, agents, clock
+    case media, focus, volume, agenda, note, clipboard, files, battery, agents, clock, awake
     public var id: String { rawValue }
     public var title: String {
         switch self {
@@ -17,6 +17,7 @@ public enum HomeWidget: String, CaseIterable, Identifiable, Codable, Sendable {
         case .battery: return L("Batterie")
         case .agents: return L("Quotas")
         case .clock: return L("Horloge")
+        case .awake: return L("Éveil")
         }
     }
     public var symbol: String {
@@ -31,137 +32,162 @@ public enum HomeWidget: String, CaseIterable, Identifiable, Codable, Sendable {
         case .battery: return "battery.75percent"
         case .agents: return "sparkles"
         case .clock: return "clock"
+        case .awake: return "cup.and.saucer"
+        }
+    }
+    /// Smallest footprint, in grid cells, at which the widget still shows something useful.
+    public var minimum: (w: Int, h: Int) {
+        switch self {
+        case .agenda, .note, .clipboard, .agents: return (2, 1)
+        default: return (1, 1)
+        }
+    }
+    /// Footprint given to a widget that has just been added.
+    public var preferred: (w: Int, h: Int) {
+        switch self {
+        case .media: return (4, 2)
+        case .focus, .note, .clipboard, .agents: return (3, 2)
+        case .agenda, .files: return (3, 1)
+        case .volume, .battery, .clock, .awake: return (2, 1)
         }
     }
 }
 
-public struct HomeTile: Codable, Equatable, Identifiable, Sendable {
+/// A widget and the cells it covers. `x`/`y` are the top-left cell, `w`/`h` the span.
+public struct HomeItem: Codable, Equatable, Identifiable, Sendable {
     public var widget: HomeWidget
-    /// A wide tile takes twice the width of a narrow one in its row.
-    public var wide: Bool
+    public var x: Int
+    public var y: Int
+    public var w: Int
+    public var h: Int
     public var id: String { widget.rawValue }
-    public var weight: Int { wide ? 2 : 1 }
-    public init(_ widget: HomeWidget, wide: Bool = false) { self.widget = widget; self.wide = wide }
+    public init(_ widget: HomeWidget, x: Int, y: Int, w: Int, h: Int) { self.widget = widget; self.x = x; self.y = y; self.w = w; self.h = h }
+    func overlaps(_ other: HomeItem) -> Bool { x < other.x + other.w && other.x < x + w && y < other.y + other.h && other.y < y + h }
+    func contains(x cellX: Int, y cellY: Int) -> Bool { cellX >= x && cellX < x + w && cellY >= y && cellY < y + h }
 }
 
-/// Which of the two rows is the tall one.
-public enum RowBalance: String, CaseIterable, Identifiable, Codable, Sendable {
-    case top, even, bottom
-    public var id: String { rawValue }
-    public var title: String { switch self { case .top: return L("Haut plus grand"); case .even: return L("Égales"); case .bottom: return L("Bas plus grand") } }
-}
-
-/// Two rows of tiles. Every mutation leaves a layout that can be drawn: no duplicate, no overfull row,
-/// never an empty overview, and an empty row is always the lower one.
+/// The overview is a grid of cells. Every mutation leaves a layout that can be drawn: each widget
+/// at most once, inside the grid, at least its minimum size, never overlapping, never empty.
 public struct HomeLayout: Codable, Equatable, Sendable {
-    public static let maxTiles = 3
-    /// A row holds at most this much width weight, so the narrowest tile keeps a usable width.
-    public static let maxWeight = 4
-    public static let standard = HomeLayout(rows: [[HomeTile(.media, wide: true), HomeTile(.focus)], [HomeTile(.volume, wide: true), HomeTile(.agenda)]], balance: .top)
-    public private(set) var rows: [[HomeTile]]
-    public var balance: RowBalance
+    public static let columns = 8
+    public static let rows = 4
+    public static let standard = HomeLayout(items: [
+        HomeItem(.media, x: 0, y: 0, w: 5, h: 3), HomeItem(.focus, x: 5, y: 0, w: 3, h: 3),
+        HomeItem(.volume, x: 0, y: 3, w: 5, h: 1), HomeItem(.agenda, x: 5, y: 3, w: 3, h: 1)
+    ])
+    public private(set) var items: [HomeItem]
 
-    public init(rows: [[HomeTile]], balance: RowBalance = .top) {
-        self.rows = rows; self.balance = balance
-        normalize()
-    }
+    public init(items: [HomeItem]) { self.items = items; normalize() }
+
+    private enum CodingKeys: String, CodingKey { case items, rows, balance }
+    private struct LegacyTile: Decodable { let widget: HomeWidget; let wide: Bool }
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        rows = try container.decode([[HomeTile]].self, forKey: .rows)
-        balance = (try? container.decode(RowBalance.self, forKey: .balance)) ?? .top
+        if let items = try container.decodeIfPresent([HomeItem].self, forKey: .items) { self.items = items }
+        else {
+            // Layout of the first 1.0 builds: two rows of narrow or wide tiles, one row taller than the other.
+            let rows = try container.decode([[LegacyTile]].self, forKey: .rows).prefix(2).filter { !$0.isEmpty }
+            let balance = (try? container.decode(String.self, forKey: .balance)) ?? "top"
+            let heights = rows.count < 2 ? [Self.rows] : balance == "even" ? [2, 2] : balance == "bottom" ? [1, 3] : [3, 1]
+            var converted: [HomeItem] = [], y = 0
+            for (index, row) in rows.enumerated() {
+                let weight = row.reduce(0) { $0 + ($1.wide ? 2 : 1) }
+                var x = 0
+                for (position, tile) in row.enumerated() {
+                    let last = position == row.count - 1
+                    let width = last ? Self.columns - x : max(1, Self.columns * (tile.wide ? 2 : 1) / weight)
+                    converted.append(HomeItem(tile.widget, x: x, y: y, w: width, h: heights[index])); x += width
+                }
+                y += heights[index]
+            }
+            self.items = converted
+        }
         normalize()
+    }
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(items, forKey: .items)
     }
     /// Unreadable or outdated settings fall back to the standard overview instead of an empty page.
     public static func restore(_ data: Data?) -> HomeLayout {
         guard let data, let layout = try? JSONDecoder().decode(HomeLayout.self, from: data) else { return .standard }
         return layout
     }
-    /// The four fixed slots of the first 1.0 builds: large, narrow, large, narrow.
-    public static func migrating(slots keys: [String]) -> HomeLayout? {
-        let values = keys.compactMap(HomeWidget.init(rawValue:))
-        guard values.count == 4, Set(values).count == 4 else { return nil }
-        return HomeLayout(rows: [[HomeTile(values[0], wide: true), HomeTile(values[1])], [HomeTile(values[2], wide: true), HomeTile(values[3])]])
-    }
     public var encoded: Data { (try? JSONEncoder().encode(self)) ?? Data() }
-    public var widgets: [HomeWidget] { rows.flatMap { $0.map(\.widget) } }
-    public var available: [HomeWidget] { HomeWidget.allCases.filter { !widgets.contains($0) } }
-    public func contains(_ widget: HomeWidget) -> Bool { widgets.contains(widget) }
-    public func position(of widget: HomeWidget) -> (row: Int, index: Int)? {
-        for (row, tiles) in rows.enumerated() { if let index = tiles.firstIndex(where: { $0.widget == widget }) { return (row, index) } }
-        return nil
-    }
-    public func hasRoom(in row: Int) -> Bool { rows.indices.contains(row) && rows[row].count < Self.maxTiles }
+    public var widgets: [HomeWidget] { items.map(\.widget) }
+    public var available: [HomeWidget] { HomeWidget.allCases.filter { !contains($0) } }
+    public func contains(_ widget: HomeWidget) -> Bool { items.contains { $0.widget == widget } }
+    public func item(_ widget: HomeWidget) -> HomeItem? { items.first { $0.widget == widget } }
+    public func item(atX x: Int, y: Int) -> HomeItem? { items.first { $0.contains(x: x, y: y) } }
 
-    /// Adds to the row with the most room. False when both rows are full or the widget is already there.
+    private static func clamped(_ item: HomeItem) -> HomeItem {
+        var copy = item
+        let least = item.widget.minimum
+        copy.w = min(columns, max(least.w, item.w)); copy.h = min(rows, max(least.h, item.h))
+        copy.x = min(columns - copy.w, max(0, item.x)); copy.y = min(rows - copy.h, max(0, item.y))
+        return copy
+    }
+    /// True when the item, once fitted inside the grid, touches no widget other than itself.
+    public func isFree(_ candidate: HomeItem) -> Bool {
+        let fitted = Self.clamped(candidate)
+        return !items.contains { $0.widget != candidate.widget && $0.overlaps(fitted) }
+    }
+    /// Moves or resizes a widget. Refused, leaving the layout untouched, when the place is taken.
+    @discardableResult public mutating func setFrame(_ widget: HomeWidget, x: Int, y: Int, w: Int, h: Int) -> Bool {
+        guard let index = items.firstIndex(where: { $0.widget == widget }) else { return false }
+        let fitted = Self.clamped(HomeItem(widget, x: x, y: y, w: w, h: h))
+        guard isFree(fitted) else { return false }
+        items[index] = fitted; return true
+    }
+    /// Moves a widget to a cell. Dropped on another widget, the two trade places when each fits the other's frame.
+    @discardableResult public mutating func move(_ widget: HomeWidget, toX x: Int, y: Int) -> Bool {
+        guard let source = item(widget) else { return false }
+        if setFrame(widget, x: x, y: y, w: source.w, h: source.h) { return true }
+        guard let other = item(atX: x, y: y), other.widget != widget,
+              let first = items.firstIndex(where: { $0.widget == widget }), let second = items.firstIndex(where: { $0.widget == other.widget }) else { return false }
+        let least = (widget.minimum, other.widget.minimum)
+        guard other.w >= least.0.w, other.h >= least.0.h, source.w >= least.1.w, source.h >= least.1.h else { return false }
+        items[first] = HomeItem(widget, x: other.x, y: other.y, w: other.w, h: other.h)
+        items[second] = HomeItem(other.widget, x: source.x, y: source.y, w: source.w, h: source.h)
+        return true
+    }
+    /// Adds a widget in the first free place, at its preferred size or, failing that, a smaller one.
     @discardableResult public mutating func add(_ widget: HomeWidget) -> Bool {
         guard !contains(widget) else { return false }
-        let row = rows[1].count < rows[0].count ? 1 : 0
-        guard let target = [row, 1 - row].first(where: hasRoom) else { return false }
-        return place(widget, row: target, index: rows[target].count)
+        let least = widget.minimum, wanted = widget.preferred
+        var sizes: [(Int, Int)] = []
+        for h in stride(from: wanted.h, through: least.h, by: -1) { for w in stride(from: wanted.w, through: least.w, by: -1) { sizes.append((w, h)) } }
+        // Largest area first, so a widget only shrinks when it has to.
+        for (w, h) in sizes.sorted(by: { $0.0 * $0.1 > $1.0 * $1.1 }) {
+            for y in 0...(Self.rows - h) { for x in 0...(Self.columns - w) {
+                let candidate = HomeItem(widget, x: x, y: y, w: w, h: h)
+                if isFree(candidate) { items.append(candidate); return true }
+            } }
+        }
+        return false
     }
     /// The last widget cannot be removed: an empty overview would look broken.
     @discardableResult public mutating func remove(_ widget: HomeWidget) -> Bool {
-        guard widgets.count > 1, let spot = position(of: widget) else { return false }
-        rows[spot.row].remove(at: spot.index); normalize(); return true
-    }
-    /// Moves or inserts a widget. Dropped on a tile of a full row, it trades places with that tile.
-    @discardableResult public mutating func place(_ widget: HomeWidget, row: Int, index: Int) -> Bool {
-        guard rows.indices.contains(row), index >= 0 else { return false }
-        let source = position(of: widget)
-        if source?.row != row, rows[row].count >= Self.maxTiles {
-            guard let source, index < rows[row].count else { return false }
-            let displaced = rows[row][index]
-            rows[row][index] = rows[source.row][source.index]
-            rows[source.row][source.index] = displaced
-            normalize(); return true
-        }
-        let tile = source.map { rows[$0.row].remove(at: $0.index) } ?? HomeTile(widget)
-        rows[row].insert(tile, at: min(index, rows[row].count))
-        normalize(); return true
-    }
-    /// Widening a tile narrows its neighbours when the row would otherwise overflow.
-    public mutating func setWide(_ widget: HomeWidget, _ wide: Bool) {
-        guard let spot = position(of: widget) else { return }
-        rows[spot.row][spot.index].wide = wide
-        fit(row: spot.row, keeping: wide ? widget : nil)
-    }
-    public func isWide(_ widget: HomeWidget) -> Bool { position(of: widget).map { rows[$0.row][$0.index].wide } ?? false }
-
-    private mutating func fit(row: Int, keeping: HomeWidget? = nil) {
-        while rows[row].reduce(0, { $0 + $1.weight }) > Self.maxWeight,
-              let index = rows[row].lastIndex(where: { $0.wide && $0.widget != keeping }) ?? rows[row].lastIndex(where: \.wide) {
-            rows[row][index].wide = false
-        }
+        guard items.count > 1, let index = items.firstIndex(where: { $0.widget == widget }) else { return false }
+        items.remove(at: index); return true
     }
     private mutating func normalize() {
-        var seen = Set<HomeWidget>()
-        var clean = rows.prefix(2).map { tiles in Array(tiles.filter { seen.insert($0.widget).inserted }.prefix(Self.maxTiles)) }
-        while clean.count < 2 { clean.append([]) }
-        if clean[0].isEmpty { clean.swapAt(0, 1) }
-        rows = clean
-        if rows[0].isEmpty { rows = Self.standard.rows }
-        for row in rows.indices { fit(row: row) }
+        var kept: [HomeItem] = []
+        for item in items.map(Self.clamped) where !kept.contains(where: { $0.widget == item.widget || $0.overlaps(item) }) { kept.append(item) }
+        items = kept.isEmpty ? Self.standard.items : kept
     }
 
     // MARK: Geometry
 
-    /// Heights of the two rows inside `total`. A single row takes everything.
-    public func heights(total: CGFloat, spacing: CGFloat) -> [CGFloat] {
-        guard !rows[1].isEmpty else { return [max(0, total), 0] }
-        let usable = max(0, total - spacing)
-        let small = min(108, usable / 2)
-        switch balance {
-        case .top: return [usable - small, small]
-        case .even: return [usable / 2, usable / 2]
-        case .bottom: return [small, usable - small]
-        }
+    public static func cellSize(in size: CGSize, spacing: CGFloat) -> CGSize {
+        CGSize(width: max(1, (size.width - spacing * CGFloat(columns - 1)) / CGFloat(columns)),
+               height: max(1, (size.height - spacing * CGFloat(rows - 1)) / CGFloat(rows)))
     }
-    /// Widths of the tiles of one row, proportional to their weight.
-    public func widths(row: Int, total: CGFloat, spacing: CGFloat) -> [CGFloat] {
-        guard rows.indices.contains(row), !rows[row].isEmpty else { return [] }
-        let tiles = rows[row]
-        let usable = max(0, total - spacing * CGFloat(tiles.count - 1))
-        let weight = CGFloat(tiles.reduce(0) { $0 + $1.weight })
-        return tiles.map { (usable * CGFloat($0.weight) / weight).rounded(.down) }
+    /// Rectangle of an item inside an area of `size`, with `spacing` between cells.
+    public static func frame(of item: HomeItem, in size: CGSize, spacing: CGFloat) -> CGRect {
+        let cell = cellSize(in: size, spacing: spacing)
+        return CGRect(x: CGFloat(item.x) * (cell.width + spacing), y: CGFloat(item.y) * (cell.height + spacing),
+                      width: CGFloat(item.w) * cell.width + CGFloat(item.w - 1) * spacing,
+                      height: CGFloat(item.h) * cell.height + CGFloat(item.h - 1) * spacing)
     }
 }

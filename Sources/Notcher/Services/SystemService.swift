@@ -13,6 +13,11 @@ import NotcherCore
     @Published var outputName = "Sortie audio"
     @Published var outputs: [AudioOutput] = []
     @Published var awake = false
+    /// End of a timed awake period; nil while awake means "until turned off".
+    @Published private(set) var awakeUntil: Date?
+    private var awakeTask: Task<Void, Never>?
+    /// A Bluetooth output (headphones, AirPods) has just become the default one.
+    var onHeadphones: ((String) -> Void)?
     @Published var audioError: String?
     @Published var displayError: String?
     var onVolumeChange: ((Double, Bool) -> Void)?
@@ -35,7 +40,12 @@ import NotcherCore
     func start() {
         guard timer == nil else { return }
         // Polling stays as a safety net; the observer delivers key presses immediately.
-        let live = VolumeObserver { [weak self] volume, muted in Task { @MainActor in self?.applyLive(volume: volume, muted: muted) } }
+        let live = VolumeObserver(onChange: { [weak self] volume, muted in Task { @MainActor in self?.applyLive(volume: volume, muted: muted) } },
+                                  onDevice: { [weak self] name, bluetooth in Task { @MainActor in
+                                      guard let self else { return }
+                                      self.outputName = name; self.refresh()
+                                      if bluetooth { self.onHeadphones?(name) }
+                                  } })
         live.start(); observer = live
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in Task { @MainActor in self?.refresh() } }
@@ -45,8 +55,7 @@ import NotcherCore
         timer?.invalidate(); timer = nil
         observer?.stop(); observer = nil
         [readTask, outputsTask, brightnessReadTask, brightnessTask, volumeTask, controlTask].forEach { $0?.cancel() }
-        if caffeinate?.isRunning == true { caffeinate?.terminate() }
-        caffeinate = nil; awake = false
+        stopAwake()
     }
     func refresh() {
         guard readTask == nil, lastFailure.map({ Date().timeIntervalSince($0) > 15 }) ?? true else { return }
@@ -132,13 +141,41 @@ import NotcherCore
             } catch is CancellationError {} catch { brightnessTask = nil; displayError = "Luminosité indisponible" }
         }
     }
-    func toggleAwake() {
-        if let process = caffeinate, process.isRunning { process.terminate(); caffeinate = nil; awake = false; return }
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-        process.arguments = ["-d", "-w", String(ProcessInfo.processInfo.processIdentifier)]
-        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
-        process.terminationHandler = { [weak self] child in Task { @MainActor in if self?.caffeinate === child { self?.awake = false; self?.caffeinate = nil } } }
-        do { try process.run(); caffeinate = process; awake = true } catch { audioError = error.localizedDescription }
+    func toggleAwake() { if awake { stopAwake() } else { startAwake(until: nil) } }
+    /// Adds time to the awake period, starting one when the Mac was free to sleep.
+    /// An open-ended period becomes a timed one counted from now.
+    func extendAwake(minutes: Int) {
+        guard minutes > 0 else { return }
+        let start = awake ? max(awakeUntil ?? Date(), Date()) : Date()
+        startAwake(until: start.addingTimeInterval(Double(minutes) * 60))
+    }
+    var awakeRemaining: TimeInterval? { awake ? awakeUntil.map { max(0, $0.timeIntervalSinceNow) } : nil }
+    private func startAwake(until end: Date?) {
+        awakeTask?.cancel(); awakeTask = nil
+        if caffeinate?.isRunning != true {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
+            process.arguments = ["-d", "-w", String(ProcessInfo.processInfo.processIdentifier)]
+            process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+            process.terminationHandler = { [weak self] child in Task { @MainActor in if self?.caffeinate === child { self?.stopAwake() } } }
+            do { try process.run(); caffeinate = process } catch { audioError = error.localizedDescription; return }
+        }
+        awake = true; awakeUntil = end
+        guard let end else { return }
+        awakeTask = Task { [weak self] in
+            // Re-check instead of trusting one long sleep: the period may be extended or the Mac suspended.
+            while !Task.isCancelled, let self, let until = self.awakeUntil, self.awake {
+                let left = until.timeIntervalSinceNow
+                if left <= 0 { self.stopAwake(); return }
+                do { try await Task.sleep(for: .seconds(min(left, 30))) } catch { return }
+            }
+            _ = end
+        }
+    }
+    func stopAwake() {
+        awakeTask?.cancel(); awakeTask = nil
+        let process = caffeinate
+        caffeinate = nil; awake = false; awakeUntil = nil
+        if process?.isRunning == true { process?.terminate() }
     }
 }

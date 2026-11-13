@@ -50,6 +50,25 @@ private final class NotchContainer: NSView {
     /// Identifies the transition in flight; a stale completion must never resize the window.
     private var transition = 0
     private var settleTask: Task<Void, Never>?
+    /// False after the panel was closed with the pointer still on it: hovering must not reopen it at once.
+    private var hoverArmed = true
+    private var auditTimer: Timer?
+    private var staleDialog = 0
+    private var staleDrag = 0
+    /// The pointer counts as on the notch slightly beyond its edges, and all the way up: at the top of the
+    /// screen the pointer sits exactly on the upper edge, which a plain rectangle test excludes.
+    private func isOnNotch(_ point: CGPoint) -> Bool {
+        let frame = shapeFrame
+        return CGRect(x: frame.minX - 2, y: frame.minY - 2, width: frame.width + 4, height: frame.height + 14).contains(point)
+    }
+    /// Where the collapse button is drawn, in screen coordinates. Clicks there are handled before any view,
+    /// so the panel can always be closed, whatever state the interface is in.
+    private var collapseButtonFrame: CGRect {
+        let side: CGFloat = 32
+        let right = anchor.x + model.expandedWidth / 2 - 32
+        let top = anchor.y - model.notchHeight - 12 - (38 - side) / 2
+        return CGRect(x: right - side, y: top - side, width: side, height: side).insetBy(dx: -4, dy: -4)
+    }
     /// Area actually drawn, in screen coordinates. The window may be larger while a transition runs.
     private var shapeFrame: CGRect { PanelGeometry.frame(size: model.targetSize, topCenter: anchor) }
     private var screen: NSScreen? { NSScreen.screens.first { displayID($0) == model.preferences.screenID } ?? NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first }
@@ -74,8 +93,13 @@ private final class NotchContainer: NSView {
         model.onGeometryChange = { [weak self] in self?.scheduleGeometry() }
         model.$tab.dropFirst().sink { [weak self] _ in self?.panel.makeFirstResponder(nil) }.store(in: &subscriptions)
         model.$expanded.dropFirst().sink { [weak self] expanded in
-            if !expanded { self?.panel.makeFirstResponder(nil); self?.panel.resignKey() }
+            guard let self, !expanded else { return }
+            self.panel.makeFirstResponder(nil); self.panel.resignKey()
+            if self.isOnNotch(NSEvent.mouseLocation) { self.hoverArmed = false }
         }.store(in: &subscriptions)
+        // Nothing should ever leave the panel out of step with its state; if something does, this repairs it.
+        auditTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in Task { @MainActor in self?.audit() } }
+        auditTimer?.tolerance = 0.3
         model.$dialogOpen.dropFirst().sink { [weak self] open in if !open { self?.scheduleClose() } }.store(in: &subscriptions)
         model.$pinned.dropFirst().sink { [weak self] pinned in if !pinned { self?.scheduleClose() } }.store(in: &subscriptions)
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.reassert() } }
@@ -91,12 +115,17 @@ private final class NotchContainer: NSView {
                 self.showContextMenu(event)
                 return nil
             }
-            // Open on the press itself: no gesture recogniser, no dependence on which window has the focus.
-            if event.type == .leftMouseDown, !self.model.expanded, self.shapeFrame.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation) {
-                self.hoverTask?.cancel(); self.model.expand(); self.lastInside = true
+            // The collapse button answers here, before SwiftUI: a blocked view or a lost sheet cannot disable it.
+            if event.type == .leftMouseDown, self.model.expanded || self.model.presentationExpanded, self.collapseButtonFrame.contains(NSEvent.mouseLocation) {
+                self.forceCollapse()
                 return nil
             }
-            if event.type == .keyDown && event.keyCode == 53 && self.panel.isKeyWindow { self.model.collapse(); return nil }
+            // Open on the press itself: no gesture recogniser, no dependence on which window has the focus.
+            if event.type == .leftMouseDown, !self.model.expanded, self.isOnNotch(NSEvent.mouseLocation) {
+                self.hoverTask?.cancel(); self.hoverTask = nil; self.model.expand(); self.lastInside = true
+                return nil
+            }
+            if event.type == .keyDown && event.keyCode == 53 && self.panel.isKeyWindow { self.forceCollapse(); return nil }
             // ⌘1…⌘5 jump between the visible tabs while the panel has the keyboard.
             if event.type == .keyDown, self.panel.isKeyWindow, self.model.expanded,
                event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
@@ -111,10 +140,11 @@ private final class NotchContainer: NSView {
         monitors.forEach(NSEvent.removeMonitor); monitors.removeAll()
         if let observer { NotificationCenter.default.removeObserver(observer) }; observer = nil
         workspaceObservers.forEach(NSWorkspace.shared.notificationCenter.removeObserver); workspaceObservers.removeAll()
+        auditTimer?.invalidate(); auditTimer = nil
         hoverTask?.cancel(); closeTask?.cancel(); settleTask?.cancel(); transition += 1; panel.orderOut(nil)
     }
     func toggle() {
-        if model.expanded { model.collapse() }
+        if model.expanded { forceCollapse() }
         else { model.expand(); panel.makeKeyAndOrderFront(nil) }
     }
     /// Opens without toggling; used when the app is launched again while already running.
@@ -177,6 +207,38 @@ private final class NotchContainer: NSView {
         if hosting?.frame.origin != origin { hosting?.setFrameOrigin(origin) }
         CATransaction.commit()
     }
+    /// Closes the panel unconditionally: clears whatever was holding it open and resynchronises the window.
+    func forceCollapse() {
+        hoverTask?.cancel(); hoverTask = nil; closeTask?.cancel()
+        if let sheet = panel.attachedSheet { panel.endSheet(sheet) }
+        model.dialogOpen = false; model.dragging = false
+        model.collapse()
+        if model.expanded { model.expanded = false; model.pinned = false }
+        updateGeometry()
+        // If the animation did not land for any reason, apply the closed state directly.
+        Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(1600)) } catch { return }
+            guard let self, !self.model.expanded, self.model.presentationExpanded || self.model.shapeSize != self.model.targetSize else { return }
+            self.updateGeometry(animated: false)
+        }
+    }
+    /// Once a second, when nothing is animating: the drawn state must match the model, and a flag that
+    /// keeps the panel open must correspond to something really on screen.
+    private func audit() {
+        if model.dialogOpen {
+            let visible = panel.attachedSheet != nil || NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && ($0 is NSSavePanel || $0.sheetParent === panel) }
+            staleDialog = visible ? 0 : staleDialog + 1
+            if staleDialog >= 3 { model.dialogOpen = false; staleDialog = 0 }
+        } else { staleDialog = 0 }
+        if model.dragging && !isOnNotch(NSEvent.mouseLocation) {
+            staleDrag += 1
+            if staleDrag >= 3 { model.dragging = false; staleDrag = 0 }
+        } else { staleDrag = 0 }
+        guard settleTask == nil, !geometryQueued, !contextMenuOpen else { return }
+        if model.presentationExpanded != model.expanded || model.shapeSize != model.targetSize { updateGeometry(animated: false) }
+        else { place(model.shapeSize) }
+        if !panel.isVisible { panel.orderFrontRegardless() }
+    }
     private func mouse(_ event: NSEvent) {
         pointerMoved(click: event.type == .leftMouseDown, drag: event.type == .leftMouseDragged && event.window !== panel)
     }
@@ -184,24 +246,28 @@ private final class NotchContainer: NSView {
         guard !contextMenuOpen else { return }
         let point = NSEvent.mouseLocation
         // A transparent margin exists around the shape during transitions; only the shape counts.
-        let inside = shapeFrame.insetBy(dx: -2, dy: -2).contains(point)
+        let inside = isOnNotch(point)
         if drag && inside {
             model.expand(tab: .files); closeTask?.cancel(); return
         }
         if inside {
             closeTask?.cancel()
-            if !lastInside && !model.expanded && model.preferences.openMode == .touch {
-                // Acknowledge the pointer; the click itself is handled by the notch header.
+            if !model.expanded && hoverArmed && !model.hovering && model.preferences.openMode == .touch {
+                // Acknowledge the pointer; the click itself opens the panel.
                 model.hovering = true; Haptics.play(.alignment)
             }
-            if !lastInside && model.preferences.openMode == .hover && !model.expanded {
-                hoverTask?.cancel()
+            // Not only on entry: a pointer already resting on the notch must be able to open it too.
+            if !model.expanded && hoverArmed && hoverTask == nil && model.preferences.openMode == .hover {
                 hoverTask = Task { [weak self] in
-                    do { try await Task.sleep(for: .milliseconds(120)); guard let self, self.shapeFrame.contains(NSEvent.mouseLocation) else { return }; self.model.expand() } catch {}
+                    do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
+                    guard let self else { return }
+                    self.hoverTask = nil
+                    if self.hoverArmed, !self.model.expanded, self.isOnNotch(NSEvent.mouseLocation) { self.model.expand() }
                 }
             }
         } else {
-            hoverTask?.cancel()
+            hoverArmed = true
+            hoverTask?.cancel(); hoverTask = nil
             if model.hovering { model.hovering = false }
             if click && model.expanded && !model.pinned && !model.dialogOpen { model.collapse() }
             else if lastInside && model.expanded && !model.pinned {
@@ -212,7 +278,7 @@ private final class NotchContainer: NSView {
     }
     private func showContextMenu(_ event: NSEvent) {
         guard !contextMenuOpen, let view = panel.contentView else { return }
-        hoverTask?.cancel(); closeTask?.cancel()
+        hoverTask?.cancel(); hoverTask = nil; closeTask?.cancel()
         contextMenuOpen = true
         let menu = NSMenu()
         let settings = NSMenuItem(title: L("Réglages…"), action: #selector(openSettings), keyEquivalent: ",")
@@ -234,7 +300,7 @@ private final class NotchContainer: NSView {
                 try await Task.sleep(for: .seconds(delay))
                 guard let self, self.model.expanded, !self.contextMenuOpen else { return }
                 let editing = (self.panel.firstResponder as? NSTextView)?.isEditable == true
-                guard PanelDismissal.shouldClose(pointerInside: self.shapeFrame.insetBy(dx: -2, dy: -2).contains(NSEvent.mouseLocation), pinned: self.model.pinned,
+                guard PanelDismissal.shouldClose(pointerInside: self.isOnNotch(NSEvent.mouseLocation), pinned: self.model.pinned,
                                                  dragging: self.model.dragging, dialogOpen: self.model.dialogOpen, editingText: editing) else { return }
                 self.model.collapse()
             } catch {}

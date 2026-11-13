@@ -96,3 +96,28 @@ func clockString(_ interval: TimeInterval) -> String {
     let seconds = Int(max(0, interval.isFinite ? interval : 0))
     return String(format: "%02d:%02d", seconds / 60, seconds % 60)
 }
+
+/// Pixels of an image as 0xAARRGGBB with straight alpha, in sRGB, row by row from the top.
+func straightARGB(_ image: CGImage) -> [UInt32]? {
+    let width = image.width, height = image.height
+    guard width > 0, height > 0, let space = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+    var bytes = [UInt8](repeating: 0, count: width * height * 4)
+    let drawn = bytes.withUnsafeMutableBytes { buffer -> Bool in
+        guard let context = CGContext(data: buffer.baseAddress, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                      space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+        context.draw(image, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return true
+    }
+    guard drawn else { return nil }
+    var pixels = [UInt32](repeating: 0, count: width * height)
+    for index in 0..<(width * height) {
+        let alpha = UInt32(bytes[index * 4 + 3])
+        var red = UInt32(bytes[index * 4]), green = UInt32(bytes[index * 4 + 1]), blue = UInt32(bytes[index * 4 + 2])
+        if alpha > 0 && alpha < 255 {
+            // The context stores colour multiplied by alpha; the file format wants it as it was.
+            red = min(255, (red * 255 + alpha / 2) / alpha); green = min(255, (green * 255 + alpha / 2) / alpha); blue = min(255, (blue * 255 + alpha / 2) / alpha)
+        }
+        pixels[index] = alpha << 24 | red << 16 | green << 8 | blue
+    }
+    return pixels
+}

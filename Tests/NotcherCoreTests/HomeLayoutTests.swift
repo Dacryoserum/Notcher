@@ -3,101 +3,121 @@ import XCTest
 
 final class HomeLayoutTests: XCTestCase {
     private func assertDrawable(_ layout: HomeLayout, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertEqual(layout.rows.count, 2, file: file, line: line)
-        XCTAssertFalse(layout.rows[0].isEmpty, file: file, line: line)
+        XCTAssertFalse(layout.items.isEmpty, file: file, line: line)
         XCTAssertEqual(Set(layout.widgets).count, layout.widgets.count, file: file, line: line)
-        for row in layout.rows {
-            XCTAssertLessThanOrEqual(row.count, HomeLayout.maxTiles, file: file, line: line)
-            XCTAssertLessThanOrEqual(row.reduce(0) { $0 + $1.weight }, HomeLayout.maxWeight, file: file, line: line)
+        var taken = Set<Int>()
+        for item in layout.items {
+            XCTAssertGreaterThanOrEqual(item.w, item.widget.minimum.w, file: file, line: line)
+            XCTAssertGreaterThanOrEqual(item.h, item.widget.minimum.h, file: file, line: line)
+            XCTAssertTrue(item.x >= 0 && item.y >= 0 && item.x + item.w <= HomeLayout.columns && item.y + item.h <= HomeLayout.rows, file: file, line: line)
+            for y in item.y..<(item.y + item.h) { for x in item.x..<(item.x + item.w) {
+                XCTAssertTrue(taken.insert(y * HomeLayout.columns + x).inserted, "Two widgets share a cell", file: file, line: line)
+            } }
         }
     }
-    func testStandardLayoutMatchesTheOriginalOverview() {
+    func testStandardLayoutFillsTheGrid() {
         let layout = HomeLayout.standard
         XCTAssertEqual(layout.widgets, [.media, .focus, .volume, .agenda])
-        XCTAssertEqual(layout.heights(total: 320, spacing: 12), [200, 108])
-        XCTAssertEqual(layout.available.count, HomeWidget.allCases.count - 4)
+        XCTAssertEqual(layout.items.reduce(0) { $0 + $1.w * $1.h }, HomeLayout.columns * HomeLayout.rows)
+        XCTAssertFalse(HomeLayout.standard.contains(.note))
         assertDrawable(layout)
     }
-    func testAddingFillsTheEmptiestRowAndStopsWhenFull() {
+    func testResizingIsRefusedOnlyWhenThePlaceIsTaken() {
         var layout = HomeLayout.standard
-        XCTAssertTrue(layout.add(.note)); XCTAssertTrue(layout.add(.clock))
-        XCTAssertEqual(layout.rows.map(\.count), [3, 3])
+        // Growing into the neighbour is refused and changes nothing.
+        XCTAssertFalse(layout.setFrame(.volume, x: 0, y: 3, w: 6, h: 1))
+        XCTAssertEqual(layout, .standard)
+        // Shrinking is always possible, down to a single cell for a small widget…
+        XCTAssertTrue(layout.setFrame(.volume, x: 0, y: 3, w: 1, h: 1))
+        XCTAssertEqual(layout.item(.volume), HomeItem(.volume, x: 0, y: 3, w: 1, h: 1))
+        // …which frees room for the neighbour to grow into.
+        XCTAssertTrue(layout.setFrame(.agenda, x: 1, y: 3, w: 7, h: 1))
+        // A widget never goes below its minimum, nor outside the grid.
+        XCTAssertTrue(layout.setFrame(.agenda, x: 7, y: 3, w: 0, h: 0))
+        XCTAssertEqual(layout.item(.agenda), HomeItem(.agenda, x: 6, y: 3, w: 2, h: 1))
+        XCTAssertTrue(layout.setFrame(.volume, x: -5, y: 99, w: 2, h: 1))
+        XCTAssertEqual(layout.item(.volume), HomeItem(.volume, x: 0, y: 3, w: 2, h: 1))
+        XCTAssertFalse(layout.setFrame(.clock, x: 0, y: 0, w: 1, h: 1))
+        assertDrawable(layout)
+    }
+    func testMovingOntoAnotherWidgetTradesPlaces() {
+        var layout = HomeLayout.standard
+        XCTAssertTrue(layout.move(.focus, toX: 1, y: 1))
+        XCTAssertEqual(layout.item(.focus), HomeItem(.focus, x: 0, y: 0, w: 5, h: 3))
+        XCTAssertEqual(layout.item(.media), HomeItem(.media, x: 5, y: 0, w: 3, h: 3))
+        // Free cells are simply taken.
+        XCTAssertTrue(layout.setFrame(.volume, x: 0, y: 3, w: 2, h: 1))
+        XCTAssertTrue(layout.move(.volume, toX: 3, y: 3))
+        XCTAssertEqual(layout.item(.volume), HomeItem(.volume, x: 3, y: 3, w: 2, h: 1))
+        // A trade that would squeeze a widget below its minimum is refused.
+        XCTAssertTrue(layout.setFrame(.volume, x: 4, y: 3, w: 1, h: 1))
+        let before = layout
+        XCTAssertFalse(layout.move(.agenda, toX: 4, y: 3))
+        XCTAssertEqual(layout, before)
+        XCTAssertFalse(layout.move(.clock, toX: 0, y: 0))
+        assertDrawable(layout)
+    }
+    func testAddingFindsFreeRoomShrinksWhenNeededAndStopsWhenFull() {
+        var layout = HomeLayout.standard
+        XCTAssertFalse(layout.add(.clock), "The standard overview has no free cell")
+        XCTAssertTrue(layout.setFrame(.volume, x: 0, y: 3, w: 2, h: 1))
+        XCTAssertTrue(layout.add(.clock))
+        XCTAssertEqual(layout.item(.clock), HomeItem(.clock, x: 2, y: 3, w: 2, h: 1))
+        XCTAssertTrue(layout.add(.awake))
+        XCTAssertEqual(layout.item(.awake), HomeItem(.awake, x: 4, y: 3, w: 1, h: 1))
         XCTAssertFalse(layout.add(.battery))
-        XCTAssertFalse(layout.add(.note))
-        XCTAssertFalse(layout.contains(.battery))
+        XCTAssertFalse(layout.add(.clock))
         assertDrawable(layout)
+        var empty = HomeLayout(items: [HomeItem(.clock, x: 0, y: 0, w: 1, h: 1)])
+        XCTAssertTrue(empty.add(.media))
+        XCTAssertEqual(empty.item(.media)?.w, HomeWidget.media.preferred.w)
     }
-    func testRemovingKeepsAtLeastOneWidgetAndNeverLeavesTheTopRowEmpty() {
+    func testRemovingKeepsAtLeastOneWidget() {
         var layout = HomeLayout.standard
-        XCTAssertTrue(layout.remove(.media)); XCTAssertTrue(layout.remove(.focus))
-        XCTAssertEqual(layout.rows[0].map(\.widget), [.volume, .agenda])
-        XCTAssertTrue(layout.rows[1].isEmpty)
-        XCTAssertEqual(layout.heights(total: 320, spacing: 12), [320, 0])
-        XCTAssertTrue(layout.remove(.volume))
+        XCTAssertTrue(layout.remove(.media)); XCTAssertTrue(layout.remove(.focus)); XCTAssertTrue(layout.remove(.volume))
         XCTAssertFalse(layout.remove(.agenda))
         XCTAssertFalse(layout.remove(.clock))
-        assertDrawable(layout)
+        XCTAssertEqual(layout.widgets, [.agenda])
+        XCTAssertEqual(layout.available.count, HomeWidget.allCases.count - 1)
     }
-    func testMovingWithinAndBetweenRowsTakesTheTargetsPlace() {
-        var layout = HomeLayout.standard
-        XCTAssertTrue(layout.place(.focus, row: 0, index: 0))
-        XCTAssertEqual(layout.rows[0].map(\.widget), [.focus, .media])
-        XCTAssertTrue(layout.place(.agenda, row: 0, index: 1))
-        XCTAssertEqual(layout.rows[0].map(\.widget), [.focus, .agenda, .media])
-        XCTAssertEqual(layout.rows[1].map(\.widget), [.volume])
-        // The top row is full: a tile dropped on one of its tiles trades places with it.
-        XCTAssertTrue(layout.place(.volume, row: 0, index: 0))
-        XCTAssertEqual(layout.rows[0].map(\.widget), [.volume, .agenda, .media])
-        XCTAssertEqual(layout.rows[1].map(\.widget), [.focus])
-        // A new widget cannot be pushed into a full row, and out-of-range targets are refused.
-        XCTAssertFalse(layout.place(.clock, row: 0, index: 1))
-        XCTAssertFalse(layout.place(.clock, row: 5, index: 0))
-        XCTAssertTrue(layout.place(.clock, row: 1, index: 99))
-        XCTAssertEqual(layout.rows[1].map(\.widget), [.focus, .clock])
-        assertDrawable(layout)
-    }
-    func testWideningNarrowsNeighboursInsteadOfOverflowing() {
-        var layout = HomeLayout(rows: [[HomeTile(.media, wide: true), HomeTile(.focus), HomeTile(.clock)], []])
-        layout.setWide(.clock, true)
-        XCTAssertTrue(layout.isWide(.clock)); XCTAssertFalse(layout.isWide(.media))
-        layout.setWide(.focus, true)
-        XCTAssertTrue(layout.isWide(.focus))
-        assertDrawable(layout)
-        let widths = layout.widths(row: 0, total: 626, spacing: 12)
-        XCTAssertEqual(widths.count, 3)
-        XCTAssertGreaterThanOrEqual(widths.min() ?? 0, 150)
-        XCTAssertLessThanOrEqual(widths.reduce(0, +) + 24, 626)
-    }
-    func testRowBalanceAndSizesNeverProduceNegativeOrOverflowingSpace() {
-        for balance in RowBalance.allCases {
-            var layout = HomeLayout.standard; layout.balance = balance
-            for total: CGFloat in [0, 50, 320, 380] {
-                let heights = layout.heights(total: total, spacing: 12)
-                XCTAssertTrue(heights.allSatisfy { $0 >= 0 })
-                XCTAssertLessThanOrEqual(heights.reduce(0, +) + 12, max(total, 12))
-            }
+    func testFramesTileTheAreaWithoutOverflow() {
+        let size = CGSize(width: 626, height: 320)
+        var union = CGRect.null
+        for item in HomeLayout.standard.items {
+            let frame = HomeLayout.frame(of: item, in: size, spacing: 12)
+            XCTAssertTrue(frame.minX >= 0 && frame.minY >= 0)
+            XCTAssertLessThanOrEqual(frame.maxX, size.width + 0.001); XCTAssertLessThanOrEqual(frame.maxY, size.height + 0.001)
+            union = union.union(frame)
         }
-        var layout = HomeLayout.standard; layout.balance = .bottom
-        XCTAssertEqual(layout.heights(total: 320, spacing: 12), [108, 200])
-        layout.balance = .even
-        XCTAssertEqual(layout.heights(total: 320, spacing: 12), [154, 154])
-        XCTAssertEqual(layout.widths(row: 7, total: 600, spacing: 12), [])
+        XCTAssertEqual(union.width, 626, accuracy: 0.001); XCTAssertEqual(union.height, 320, accuracy: 0.001)
+        let cell = HomeLayout.cellSize(in: size, spacing: 12)
+        XCTAssertEqual(HomeLayout.frame(of: HomeItem(.clock, x: 1, y: 1, w: 1, h: 1), in: size, spacing: 12).size, cell)
+        XCTAssertGreaterThan(HomeLayout.cellSize(in: .zero, spacing: 12).width, 0)
     }
-    func testDamagedOrOldSettingsAlwaysRestoreADrawableLayout() throws {
+    func testDamagedOrOldSettingsAlwaysRestoreADrawableLayout() {
         XCTAssertEqual(HomeLayout.restore(nil), .standard)
         XCTAssertEqual(HomeLayout.restore(Data("nonsense".utf8)), .standard)
-        let duplicated = Data(#"{"rows":[[{"widget":"media","wide":true},{"widget":"media","wide":true},{"widget":"clock","wide":true},{"widget":"note","wide":true},{"widget":"files","wide":false}],[],[{"widget":"agenda","wide":false}]]}"#.utf8)
-        let restored = HomeLayout.restore(duplicated)
+        XCTAssertEqual(HomeLayout.restore(Data(#"{"items":[]}"#.utf8)), .standard)
+        let messy = Data(#"{"items":[{"widget":"media","x":0,"y":0,"w":40,"h":2},{"widget":"media","x":0,"y":3,"w":1,"h":1},{"widget":"clock","x":2,"y":1,"w":2,"h":1},{"widget":"agenda","x":7,"y":3,"w":1,"h":1}]}"#.utf8)
+        let restored = HomeLayout.restore(messy)
         assertDrawable(restored)
-        XCTAssertEqual(restored.rows[0].map(\.widget), [.media, .clock, .note])
-        XCTAssertEqual(HomeLayout.restore(Data(#"{"rows":[[],[]]}"#.utf8)), .standard)
-        // A widget removed from a future version makes the whole value unreadable rather than half applied.
-        XCTAssertEqual(HomeLayout.restore(Data(#"{"rows":[[{"widget":"weather","wide":false}],[]]}"#.utf8)), .standard)
-        var custom = HomeLayout.standard; custom.add(.note); custom.balance = .even
+        XCTAssertEqual(restored.widgets, [.media, .agenda])
+        XCTAssertEqual(restored.item(.agenda), HomeItem(.agenda, x: 6, y: 3, w: 2, h: 1))
+        // A widget from a future version makes the value unreadable rather than half applied.
+        XCTAssertEqual(HomeLayout.restore(Data(#"{"items":[{"widget":"weather","x":0,"y":0,"w":1,"h":1}]}"#.utf8)), .standard)
+        var custom = HomeLayout.standard; custom.setFrame(.volume, x: 0, y: 3, w: 1, h: 1); custom.add(.awake)
         XCTAssertEqual(HomeLayout.restore(custom.encoded), custom)
-        let migrated = try XCTUnwrap(HomeLayout.migrating(slots: ["agenda", "volume", "focus", "media"]))
-        XCTAssertEqual(migrated.widgets, [.agenda, .volume, .focus, .media])
-        XCTAssertTrue(migrated.isWide(.agenda)); XCTAssertFalse(migrated.isWide(.volume))
-        XCTAssertNil(HomeLayout.migrating(slots: ["media", "media", "focus", "volume"]))
+    }
+    func testRowLayoutOfEarlierBuildsIsConverted() {
+        let old = Data(#"{"rows":[[{"widget":"agenda","wide":true},{"widget":"volume","wide":false}],[{"widget":"focus","wide":true},{"widget":"media","wide":false}]],"balance":"top"}"#.utf8)
+        let layout = HomeLayout.restore(old)
+        assertDrawable(layout)
+        XCTAssertEqual(layout.widgets, [.agenda, .volume, .focus, .media])
+        XCTAssertEqual(layout.item(.agenda), HomeItem(.agenda, x: 0, y: 0, w: 5, h: 3))
+        XCTAssertEqual(layout.item(.media), HomeItem(.media, x: 5, y: 3, w: 3, h: 1))
+        let single = HomeLayout.restore(Data(#"{"rows":[[{"widget":"note","wide":true},{"widget":"clock","wide":false},{"widget":"battery","wide":false}],[]],"balance":"even"}"#.utf8))
+        assertDrawable(single)
+        XCTAssertEqual(single.widgets, [.note, .clock, .battery])
+        XCTAssertTrue(single.items.allSatisfy { $0.h == HomeLayout.rows })
     }
 }

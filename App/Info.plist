@@ -8,8 +8,8 @@
     <key>CFBundleName</key><string>Notcher</string>
     <key>CFBundleDisplayName</key><string>Notcher</string>
     <key>CFBundlePackageType</key><string>APPL</string>
-    <key>CFBundleShortVersionString</key><string>1.0.0</string>
-    <key>CFBundleVersion</key><string>6</string>
+    <key>CFBundleShortVersionString</key><string>1.1.0</string>
+    <key>CFBundleVersion</key><string>7</string>
     <key>CFBundleIconFile</key><string>Notcher</string>
     <key>LSMinimumSystemVersion</key><string>14.0</string>
     <key>LSUIElement</key><true/>
@@ -17,7 +17,7 @@
     <key>NSPrincipalClass</key><string>NSApplication</string>
     <key>NSCameraUsageDescription</key><string>Show your camera in the notch mirror, only when you turn it on. No images are recorded.</string>
     <key>NSCalendarsFullAccessUsageDescription</key><string>Show your upcoming events and open meeting links from the notch.</string>
-    <key>NSAppleEventsUsageDescription</key><string>Show and control playback in Spotify and Apple Music.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Show and control playback in Spotify and Apple Music, and send a sheet to Notes when you ask.</string>
     <key>NSBluetoothAlwaysUsageDescription</key><string>Show connected Bluetooth devices.</string>
     <key>NSHumanReadableCopyright</key><string>Notcher — independent application.</string>
 </dict></plist>

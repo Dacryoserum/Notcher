@@ -25,7 +25,8 @@ struct ArtworkClient: Sendable {
         let result = try await Command.run("/usr/bin/osascript", ["-l", "JavaScript", script.path, "spotify-artwork"], timeout: 6)
         guard result.status == 0, result.text.trimmingCharacters(in: .whitespacesAndNewlines) != "null" else { return nil }
         let value = try JSONDecoder().decode(SpotifyArtwork.self, from: result.data)
-        guard value.matches(track), let url = URL(string: value.url), url.scheme == "https" else { return nil }
+        var described = track; described.artworkURL = value.url
+        guard value.matches(track), let url = described.remoteArtworkURL else { return nil }
         return try await download(url)
     }
     private static func download(_ url: URL) async throws -> Data? {
@@ -144,7 +145,10 @@ extension NowPlaying {
     }
     var artworkKey: ArtworkKey { .init(title: title, artist: artist, album: album, source: bundleIdentifier.isEmpty ? application : bundleIdentifier) }
     var remoteArtworkURL: URL? {
-        guard let artworkURL, let url = URL(string: artworkURL), url.scheme == "https", url.host?.isEmpty == false else { return nil }
+        guard let artworkURL else { return nil }
+        // The image host serves both schemes; only the secure one is ever requested.
+        let secure = artworkURL.hasPrefix("http://") ? "https://" + artworkURL.dropFirst(7) : artworkURL
+        guard let url = URL(string: secure), url.scheme == "https", url.host?.isEmpty == false else { return nil }
         return url
     }
     var canRequestSpotifyArtwork: Bool { isSpotify || (bundleIdentifier.isEmpty && application.isEmpty) }

@@ -39,8 +39,14 @@ import UserNotifications
         if !preview, let identifier = Bundle.main.bundleIdentifier {
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
                 .first { $0.processIdentifier != ProcessInfo.processInfo.processIdentifier && $0.isFinishedLaunching && !$0.isTerminated }
-            if let running { running.activate(); return }
+            if let running {
+                // A copy started to replace a crashed or frozen one waits for it to be gone.
+                guard args.contains("--relaunched") else { running.activate(); return }
+                for _ in 0..<32 where !running.isTerminated { usleep(250_000) }
+                guard running.isTerminated else { return }
+            }
         }
+        if !preview { Resilience.install() }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate

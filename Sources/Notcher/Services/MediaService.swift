@@ -90,6 +90,8 @@ struct MediaClient: Sendable {
     private var revision = 0
     private var generation = UUID()
     private var failureCount = 0
+    /// Cover that macOS itself holds for the current Spotify track: a second source when Spotify gives no address.
+    private var systemCover: (key: NowPlaying.ArtworkKey, data: String)?
     private struct Intent {
         let command: MediaCommand
         let revision: Int
@@ -183,6 +185,7 @@ struct MediaClient: Sendable {
                 let system = try await client.readSystem()
                 lastSystemRead = now()
                 if system?.isSpotify == true || (system == nil && track?.isSpotify == true) {
+                    if let system, let cover = system.artwork, !cover.isEmpty { systemCover = (system.artworkKey, cover) }
                     value = try await client.readSpotify()
                 } else { value = system }
             }
@@ -194,7 +197,10 @@ struct MediaClient: Sendable {
             if failureCount >= 3 { available = false; track = nil; artworkService.clear() }
         }
     }
-    private func apply(_ value: NowPlaying?) {
+    private func apply(_ read: NowPlaying?) {
+        var value = read
+        if let current = value, current.isSpotify, current.artwork == nil, let cover = systemCover,
+           cover.key.title == current.title, cover.key.artist == current.artist { value?.artwork = cover.data }
         sampledAt = now(); error = nil; available = true; failureCount = 0
         // Another song while paused means someone is using the player: the pause starts over.
         if track?.artworkKey != value?.artworkKey { pausedSince = nil }

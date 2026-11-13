@@ -173,6 +173,41 @@ private final class NoteFileWriter: @unchecked Sendable {
         do { try writer.flush(book); error = nil }
         catch { self.error = L("Échec de la sauvegarde des fiches : %@", error.localizedDescription) }
     }
+    /// Text of a sheet as the HTML body Apple Notes expects, and the title it should carry.
+    nonisolated static func appleNote(title: String, text: String) -> (name: String, body: String)? {
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n").components(separatedBy: "\n")
+        let custom = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        var content = lines
+        var name = custom
+        if custom.isEmpty || custom == "Sans titre" {
+            // An untitled sheet is named after its first line, which then leaves the body.
+            guard let first = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else { return nil }
+            name = String(lines[first].trimmingCharacters(in: .whitespaces).prefix(120))
+            content = Array(lines[(first + 1)...])
+        }
+        guard !name.isEmpty else { return nil }
+        func escape(_ value: String) -> String {
+            value.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;").replacingOccurrences(of: ">", with: "&gt;")
+        }
+        let body = content.map { $0.isEmpty ? "<div><br></div>" : "<div>" + escape($0) + "</div>" }.joined()
+        return (name, body)
+    }
+    @Published private(set) var sending = false
+    /// Creates a note in Apple Notes from the selected sheet. `completion` receives nil on success.
+    func sendToNotes(completion: @escaping (String?) -> Void) {
+        guard !sending else { return }
+        guard let note = selected, let content = Self.appleNote(title: note.title, text: note.text) else { completion(L("Cette fiche est vide.")); return }
+        sending = true
+        Task {
+            defer { sending = false }
+            do {
+                // The text travels as arguments, never inside the script: nothing in a sheet can be run as code.
+                let script = ["-e", "on run argv", "-e", "tell application \"Notes\" to make new note with properties {name:(item 1 of argv), body:(item 2 of argv)}", "-e", "end run", "--", content.name, content.body]
+                let result = try await Command.run("/usr/bin/osascript", script, timeout: 60)
+                completion(result.status == 0 ? nil : L("Notes est inaccessible. Autorise Notcher dans Réglages Système → Confidentialité → Automatisation."))
+            } catch { completion(error.localizedDescription) }
+        }
+    }
     func export(onFinish: @escaping () -> Void = {}) {
         guard let note = selected else { onFinish(); return }
         let panel = NSSavePanel(); panel.nameFieldStringValue = note.title + ".txt"; panel.allowedContentTypes = [.plainText]

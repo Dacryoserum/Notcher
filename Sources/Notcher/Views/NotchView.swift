@@ -29,6 +29,14 @@ struct NotchView: View {
         .frame(width: size.width, height: size.height, alignment: .top)
         .background(NotchShape().fill(.black))
         .overlay(NotchShape(outline: true).stroke(model.dragging ? model.preferences.accentColor.opacity(0.8) : Color.white.opacity(shown ? 0.07 : model.hovering ? 0.22 : 0), lineWidth: 1))
+        .overlay(alignment: .top) {
+            // Under the closed notch: the extra line of an activity (each battery of a pair of earbuds).
+            if !shown, let details = model.activity?.details, !details.isEmpty {
+                HStack(spacing: 14) { ForEach(details, id: \.self) { Text($0) } }
+                    .font(.system(size: 10, weight: .medium, design: .rounded)).monospacedDigit().foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                    .frame(height: AppModel.detailHeight).padding(.top, model.notchHeight - 3).transition(.opacity)
+            }
+        }
         .clipShape(NotchShape())
         .overlay(alignment: .bottom) {
             if model.expanded, let toast = model.toast {
@@ -99,7 +107,9 @@ struct NotchHeader: View {
         return HStack(spacing: 0) {
                 HStack(spacing: 7) {
                     if let activity = model.activity {
-                        Image(systemName: activity.symbol).foregroundStyle(activity.color ?? accent).contentTransition(.symbolEffect(.replace))
+                        if let artwork = activity.artwork {
+                            Image(nsImage: artwork).resizable().interpolation(.high).scaledToFit().frame(width: min(26, model.notchHeight - 6), height: min(26, model.notchHeight - 6))
+                        } else { Image(systemName: activity.symbol).foregroundStyle(activity.color ?? accent).contentTransition(.symbolEffect(.replace)) }
                         if !model.presentationExpanded { Text(L(activity.title)).font(.system(size: 10, weight: .medium)).lineLimit(1) }
                     } else { CompactMedia(media: model.media, height: model.notchHeight, idle: idle) }
                 }
@@ -114,6 +124,9 @@ struct NotchHeader: View {
                             .animation(.easeOut(duration: 0.1), value: value)
                         Text("\(Int((value * 100).rounded()))").font(.system(size: 10, design: .monospaced)).contentTransition(.numericText(value: value))
                             .animation(.easeOut(duration: 0.1), value: value)
+                    } else if let activity = model.activity, let trailing = activity.trailing {
+                        Image(systemName: "battery.75percent").foregroundStyle(activity.color ?? accent)
+                        Text(trailing).font(.system(size: 10, weight: .medium, design: .monospaced))
                     } else { CompactStatus(media: model.media, focus: model.focus, idle: idle) }
                 }
                 .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .trailing : .leading)

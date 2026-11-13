@@ -116,7 +116,7 @@ final class ArtworkTests: XCTestCase {
     func testOnlySecureCoverAddressesAreUsed() {
         var value = track()
         XCTAssertNil(value.remoteArtworkURL)
-        value.artworkURL = "http://example.com/cover.jpg"; XCTAssertNil(value.remoteArtworkURL)
+        value.artworkURL = "http://example.com/cover.jpg"; XCTAssertEqual(value.remoteArtworkURL?.scheme, "https")
         value.artworkURL = "file:///etc/passwd"; XCTAssertNil(value.remoteArtworkURL)
         value.artworkURL = "https://"; XCTAssertNil(value.remoteArtworkURL)
         value.artworkURL = "https://i.scdn.co/image/abc"; XCTAssertEqual(value.remoteArtworkURL?.host, "i.scdn.co")

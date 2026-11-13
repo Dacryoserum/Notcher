@@ -38,8 +38,7 @@ import NotcherCore
         defaults.register(defaults: ["openOnHover": true, "mediaRestMinutes": 5, "announceTrack": true, "haptics": true, "mediaEnabled": true, "retentionHours": 24, "showHUD": true])
         let chosen = defaults.string(forKey: "appLanguage") ?? "system"
         language = ["fr", "en"].contains(chosen) ? chosen : "system"
-        homeLayout = defaults.data(forKey: "homeLayout").map { HomeLayout.restore($0) }
-            ?? HomeLayout.migrating(slots: defaults.stringArray(forKey: "homeWidgets") ?? []) ?? .standard
+        homeLayout = HomeLayout.restore(defaults.data(forKey: "homeLayout"))
         // Versions before 1.0 only knew "open on hover" on or off.
         openMode = OpenMode(rawValue: defaults.string(forKey: "openMode") ?? "") ?? (defaults.bool(forKey: "openOnHover") ? .hover : .click)
         let rest = defaults.integer(forKey: "mediaRestMinutes")
