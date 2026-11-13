@@ -15,6 +15,8 @@ cp App/Info.plist "$app/Contents/Info.plist"
 # A real app uses Contents/Resources; Bundle.module is only the swift-run fallback.
 rm -rf "$app/Contents/MacOS/Notcher_Notcher.bundle"
 cp Sources/Notcher/Resources/MediaBridge.js "$app/Contents/Resources/MediaBridge.js"
+# Interface languages: French is the source text, English its translation and the fallback.
+cp -R App/en.lproj App/fr.lproj "$app/Contents/Resources/"
 if [ -f App/Notcher.icns ]; then cp App/Notcher.icns "$app/Contents/Resources/Notcher.icns"; fi
 codesign --force --sign - --identifier fr.notcher.app "$app"
 codesign --verify --deep --strict "$app"

@@ -39,7 +39,7 @@ struct TaskItem: Codable, Identifiable {
                 self.now = Date()
                 if self.clock.finishIfNeeded(at: self.now) {
                     self.save(); NSSound(named: "Glass")?.play(); self.onFinished?()
-                    let content = UNMutableNotificationContent(); content.title = "Bien joué."; content.body = "Ton minuteur Notcher est terminé."; content.sound = .default
+                    let content = UNMutableNotificationContent(); content.title = L("Bien joué."); content.body = L("Ton minuteur Notcher est terminé."); content.sound = .default
                     try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil))
                 }
             }
@@ -159,7 +159,7 @@ private actor CalendarReader {
         }.sorted { $0.startDate < $1.startDate }.compactMap { event in
             let id = (event.eventIdentifier ?? event.calendarItemIdentifier) + "-\(event.startDate.timeIntervalSince1970)"
             guard seen.insert(id).inserted else { return nil }
-            return CalendarItem(id: id, title: event.title ?? "Événement", start: event.startDate, end: event.endDate, allDay: event.isAllDay,
+            return CalendarItem(id: id, title: event.title ?? L("Événement"), start: event.startDate, end: event.endDate, allDay: event.isAllDay,
                                 calendarName: event.calendar.title, color: NSColor(cgColor: event.calendar.cgColor) ?? .systemBlue, meeting: Self.meetingURL(event))
         }
     }
@@ -234,7 +234,7 @@ struct ClipItem: Identifiable { let id = UUID(); let text: String; let date = Da
         guard !["1password", "bitwarden", "keychainaccess", "keepass", "dashlane", "lastpass"].contains(where: bundle.contains) else { return }
         guard let text = board.string(forType: .string), !text.isEmpty, text.utf8.count <= 50_000, items.first?.text != text else { return }
         items.removeAll { $0.text == text }
-        items.insert(ClipItem(text: text, source: app?.localizedName ?? "Application"), at: 0)
+        items.insert(ClipItem(text: text, source: app?.localizedName ?? L("Application")), at: 0)
         items = Array(items.prefix(30))
     }
 }

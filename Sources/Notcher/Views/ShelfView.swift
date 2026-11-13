@@ -49,7 +49,7 @@ struct ShelfView: View {
                     Button("Afficher dans le Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting([shelf.url(for: item)]) }
                     Button("AirDrop", systemImage: "airplayaudio") { NSSharingService(named: .sendViaAirDrop)?.perform(withItems: [shelf.url(for: item)]) }
                     Button("Copier le fichier", systemImage: "doc.on.doc") { NSPasteboard.general.clearContents(); NSPasteboard.general.writeObjects([shelf.url(for: item) as NSURL]); model.notify("Fichier copié") }
-                    Button(item.isPinned ? "Désépingler" : "Conserver", systemImage: "pin") { shelf.pin(item) }
+                    Button(L(item.isPinned ? "Désépingler" : "Conserver"), systemImage: "pin") { shelf.pin(item) }
                     Divider()
                     Button("Retirer la copie", systemImage: "trash", role: .destructive) { shelf.remove(item) }
                 } label: { Image(systemName: "ellipsis").font(.system(size: 12)) }.menuStyle(.borderlessButton).frame(width: 17)

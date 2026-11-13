@@ -35,8 +35,8 @@ public enum TextError: LocalizedError {
     case invalidBase64, invalidURL
     public var errorDescription: String? {
         switch self {
-        case .invalidBase64: return "Ce texte n’est pas un Base64 UTF-8 valide."
-        case .invalidURL: return "Cette URL contient un encodage invalide."
+        case .invalidBase64: return L("Ce texte n’est pas un Base64 UTF-8 valide.")
+        case .invalidURL: return L("Cette URL contient un encodage invalide.")
         }
     }
 }

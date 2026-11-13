@@ -54,7 +54,7 @@ struct AgentCard: View {
                 } else {
                     VStack(alignment: .leading, spacing: 10) {
                         Text("—").font(.system(size: 33, weight: .light)).foregroundStyle(.white.opacity(0.2))
-                        Text(connected ? "En attente" : "Non connecté")
+                        Text(L(connected ? "En attente" : "Non connecté"))
                             .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -62,9 +62,9 @@ struct AgentCard: View {
                 if !connected { CapsuleButton(title: button, symbol: "link", action: connect) }
                 else {
                     VStack(alignment: .leading, spacing: 4) {
-                        if usage == nil { Text(status).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(2) }
+                        if usage == nil { Text(L(status)).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(2) }
                         if let usage {
-                            Text("Relevé \(usage.capturedAt.formatted(.dateTime.hour().minute()))\(usage.isStale() ? " · ancien" : "")").font(.system(size: 8)).foregroundStyle(usage.isStale() ? Theme.orange : Theme.muted)
+                            Text(L("Relevé %@", usage.capturedAt.formatted(.dateTime.hour().minute())) + (usage.isStale() ? L(" · ancien") : "")).font(.system(size: 8)).foregroundStyle(usage.isStale() ? Theme.orange : Theme.muted)
                         }
                     }
                 }
@@ -78,7 +78,7 @@ struct AgentCard: View {
             HStack {
                 Text(window.title).font(.system(size: 10)).foregroundStyle(.secondary)
                 Spacer()
-                Text(expired ? "À actualiser" : "\(Int(window.usedPercent)) % utilisés").font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(expired ? Theme.muted : tint)
+                Text(expired ? L("À actualiser") : L("%lld %% utilisés", Int(window.usedPercent))).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(expired ? Theme.muted : tint)
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -87,7 +87,7 @@ struct AgentCard: View {
                 }
             }.frame(height: 4)
             if let reset = window.resetsAt {
-                Text(expired ? "À actualiser" : "Réinitialisation \(reset.formatted(.relative(presentation: .named)))")
+                Text(expired ? L("À actualiser") : L("Réinitialisation %@", reset.formatted(.relative(presentation: .named))))
                     .font(.system(size: 8)).foregroundStyle(Theme.muted).lineLimit(1)
             }
         }

@@ -44,8 +44,8 @@ struct CalendarView: View {
             HStack(spacing: 5) {
                 Text(calendar.month.formatted(.dateTime.month(.wide).year()).capitalized).font(.system(size: 12, weight: .semibold)).lineLimit(1)
                 Spacer(minLength: 0)
-                monthButton("chevron.left", label: "Mois précédent", offset: -1)
-                monthButton("chevron.right", label: "Mois suivant", offset: 1)
+                monthButton("chevron.left", label: L("Mois précédent"), offset: -1)
+                monthButton("chevron.right", label: L("Mois suivant"), offset: 1)
             }
             HStack(spacing: 0) {
                 ForEach(0..<7) { index in
@@ -86,7 +86,7 @@ struct CalendarView: View {
                 .foregroundStyle(chosen ? accent.contrastingText : today ? accent : Color.white.opacity(inMonth ? 0.85 : 0.27))
                 .background(chosen ? accent : today ? accent.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: 7))
                 .contentShape(Rectangle())
-        }.buttonStyle(.plain).accessibilityLabel(date.formatted(date: .complete, time: .omitted) + ", \(events.count) événements")
+        }.buttonStyle(.plain).accessibilityLabel(date.formatted(date: .complete, time: .omitted) + L(", %lld événements", events.count))
             .accessibilityAddTraits(chosen ? .isSelected : [])
     }
     private func select(_ date: Date) {
@@ -105,7 +105,7 @@ struct CalendarEventRow: View {
                 RoundedRectangle(cornerRadius: 2).fill(Color(nsColor: event.color)).frame(width: 3)
                 VStack(alignment: .leading, spacing: 5) {
                     HStack(spacing: 5) {
-                        Text(event.allDay ? "Journée" : event.start.formatted(.dateTime.hour().minute()) + " – " + event.end.formatted(.dateTime.hour().minute()))
+                        Text(event.allDay ? L("Journée") : event.start.formatted(.dateTime.hour().minute()) + " – " + event.end.formatted(.dateTime.hour().minute()))
                         Spacer(minLength: 0)
                         if ongoing { Text("En cours").foregroundStyle(accent) }
                     }.font(.system(size: 9, weight: .medium)).foregroundStyle(.secondary)

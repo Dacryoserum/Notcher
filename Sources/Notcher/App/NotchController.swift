@@ -215,10 +215,10 @@ private final class NotchContainer: NSView {
         hoverTask?.cancel(); closeTask?.cancel()
         contextMenuOpen = true
         let menu = NSMenu()
-        let settings = NSMenuItem(title: "Réglages…", action: #selector(openSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L("Réglages…"), action: #selector(openSettings), keyEquivalent: ",")
         settings.target = self
         menu.addItem(settings); menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quitter Notcher", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L("Quitter Notcher"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
         menu.addItem(quit)
         NSMenu.popUpContextMenu(menu, with: event, for: view)

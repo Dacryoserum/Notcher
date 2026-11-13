@@ -4,19 +4,19 @@ import CoreGraphics
 public enum DashboardLayout: String, CaseIterable, Identifiable {
     case overview, media, pomodoro
     public var id: String { rawValue }
-    public var title: String { switch self { case .overview: return "Complet"; case .media: return "Médias"; case .pomodoro: return "Pomodoro" } }
+    public var title: String { switch self { case .overview: return L("Complet"); case .media: return L("Médias"); case .pomodoro: return L("Pomodoro") } }
 }
 public enum PanelSize: String, CaseIterable, Identifiable {
     case compact, comfortable
     public var id: String { rawValue }
-    public var title: String { self == .compact ? "Compact" : "Spacieux" }
+    public var title: String { self == .compact ? L("Compact") : L("Spacieux") }
     public var width: CGFloat { self == .compact ? 690 : 790 }
     public var pageHeight: CGFloat { self == .compact ? 320 : 380 }
 }
 public enum NavigationStyle: String, CaseIterable, Identifiable {
     case labels, icons
     public var id: String { rawValue }
-    public var title: String { self == .labels ? "Icônes et texte" : "Icônes" }
+    public var title: String { self == .labels ? L("Icônes et texte") : L("Icônes") }
 }
 public struct AccentColor: Equatable {
     public static let `default` = AccentColor(hex: "B3EDA8")!
@@ -35,7 +35,7 @@ public struct AccentColor: Equatable {
 public enum MotionStyle: String, CaseIterable, Identifiable, Sendable {
     case smooth, snappy, bouncy
     public var id: String { rawValue }
-    public var title: String { switch self { case .smooth: return "Fluide"; case .snappy: return "Vive"; case .bouncy: return "Rebond" } }
+    public var title: String { switch self { case .smooth: return L("Fluide"); case .snappy: return L("Vive"); case .bouncy: return L("Rebond") } }
     /// Spring used when the panel unfolds.
     public var opening: (response: Double, damping: Double) {
         switch self { case .smooth: return (0.42, 0.86); case .snappy: return (0.28, 0.92); case .bouncy: return (0.46, 0.66) }
@@ -50,19 +50,19 @@ public enum OpenMode: String, CaseIterable, Identifiable, Sendable {
     /// `touch` sits between the two: hovering is acknowledged, a click opens.
     case hover, touch, click
     public var id: String { rawValue }
-    public var title: String { switch self { case .hover: return "Au survol"; case .touch: return "Survol puis clic"; case .click: return "Au clic" } }
+    public var title: String { switch self { case .hover: return L("Au survol"); case .touch: return L("Survol puis clic"); case .click: return L("Au clic") } }
     public var detail: String {
         switch self {
-        case .hover: return "Le panneau s’ouvre dès que le pointeur arrive sur le notch."
-        case .touch: return "Le notch réagit au survol (vibration, léger agrandissement) et s’ouvre au clic."
-        case .click: return "Rien ne bouge au survol ; un clic sur le notch ouvre le panneau."
+        case .hover: return L("Le panneau s’ouvre dès que le pointeur arrive sur le notch.")
+        case .touch: return L("Le notch réagit au survol (vibration, léger agrandissement) et s’ouvre au clic.")
+        case .click: return L("Rien ne bouge au survol ; un clic sur le notch ouvre le panneau.")
         }
     }
 }
 /// A paused player stops occupying the closed notch after this long.
 public enum MediaRest {
     public static let choices = [1, 5, 15, 60, 0]
-    public static func title(minutes: Int) -> String { minutes == 0 ? "Jamais" : minutes >= 60 ? "\(minutes / 60) h" : "\(minutes) min" }
+    public static func title(minutes: Int) -> String { minutes == 0 ? L("Jamais") : minutes >= 60 ? "\(minutes / 60) h" : "\(minutes) min" }
     public static func isResting(pausedFor seconds: Double, limitMinutes: Int) -> Bool {
         limitMinutes > 0 && seconds.isFinite && seconds >= Double(limitMinutes) * 60
     }
@@ -71,14 +71,14 @@ public enum MediaRest {
 public enum CloseDelay: String, CaseIterable, Identifiable, Sendable {
     case fast, normal, slow
     public var id: String { rawValue }
-    public var title: String { switch self { case .fast: return "Rapide"; case .normal: return "Normale"; case .slow: return "Lente" } }
+    public var title: String { switch self { case .fast: return L("Rapide"); case .normal: return L("Normale"); case .slow: return L("Lente") } }
     public var seconds: Double { switch self { case .fast: return 0.3; case .normal: return 0.7; case .slow: return 1.5 } }
 }
 /// What the closed notch shows when nothing is playing.
 public enum CompactStyle: String, CaseIterable, Identifiable, Sendable {
     case info, minimal
     public var id: String { rawValue }
-    public var title: String { self == .info ? "Date et heure" : "Discret" }
+    public var title: String { self == .info ? L("Date et heure") : L("Discret") }
 }
 /// The panel always hangs from the top centre of its screen; only the lower edge and the sides move.
 public enum PanelGeometry {

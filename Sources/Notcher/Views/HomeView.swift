@@ -48,12 +48,12 @@ struct MediaCard: View {
         Button { media.command("toggle"); Haptics.play(.generic) } label: {
             Image(systemName: media.track?.playing == true ? "pause.fill" : "play.fill").font(.system(size: 11, weight: .bold)).contentTransition(.symbolEffect(.replace))
                 .foregroundStyle(accent.contrastingText).frame(width: 30, height: 30).background(accent, in: Circle()).contentShape(Rectangle())
-        }.buttonStyle(PressStyle(scale: 0.9)).disabled(media.track == nil).accessibilityLabel(media.track?.playing == true ? "Pause" : "Lecture")
+        }.buttonStyle(PressStyle(scale: 0.9)).disabled(media.track == nil).accessibilityLabel(L(media.track?.playing == true ? "Pause" : "Lecture"))
     }
     private var titles: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(media.track?.title ?? "Aucune lecture").font(.system(size: 12, weight: .semibold)).lineLimit(1)
-            Text(media.track.map { $0.artist.isEmpty ? $0.application : $0.artist } ?? "Lance un lecteur").font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
+            Text(media.track?.title ?? L("Aucune lecture")).font(.system(size: 12, weight: .semibold)).lineLimit(1)
+            Text(media.track.map { $0.artist.isEmpty ? $0.application : $0.artist } ?? L("Lance un lecteur")).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
         }
     }
     @ViewBuilder var body: some View {
@@ -100,7 +100,7 @@ struct MediaCard: View {
                 HStack(spacing: 15) {
                     artwork(68)
                     VStack(alignment: .leading, spacing: 5) {
-                        Text(media.track?.title ?? "Aucune lecture").font(.system(size: 16, weight: .semibold)).lineLimit(2)
+                        Text(media.track?.title ?? L("Aucune lecture")).font(.system(size: 16, weight: .semibold)).lineLimit(2)
                         if let track = media.track { Text(track.artist.isEmpty ? track.application : track.artist).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1) }
                         if media.track == nil {
                             HStack(spacing: 10) {
@@ -128,13 +128,13 @@ struct MediaCard: View {
                         transport("backward.fill", "Morceau précédent", "previous")
                         Button { media.command("toggle"); Haptics.play(.generic) } label: {
                             Image(systemName: media.track?.playing == true ? "pause.fill" : "play.fill").font(.system(size: 12, weight: .bold)).contentTransition(.symbolEffect(.replace)).foregroundStyle(accent.contrastingText).frame(width: 34, height: 34).background(accent, in: Circle()).contentShape(Rectangle())
-                        }.buttonStyle(PressStyle(scale: 0.9)).disabled(media.track == nil).accessibilityLabel(media.track?.playing == true ? "Pause" : "Lecture")
+                        }.buttonStyle(PressStyle(scale: 0.9)).disabled(media.track == nil).accessibilityLabel(L(media.track?.playing == true ? "Pause" : "Lecture"))
                         transport("forward.fill", "Morceau suivant", "next")
                         Spacer()
                     }
                 }
             }
-        }.overlay(alignment: .bottomLeading) { if let error = media.error { Text(error).font(.system(size: 8)).foregroundStyle(Theme.orange).lineLimit(1).padding(.horizontal, 16).padding(.bottom, 4) } }
+        }.overlay(alignment: .bottomLeading) { if let error = media.error { Text(L(error)).font(.system(size: 8)).foregroundStyle(Theme.orange).lineLimit(1).padding(.horizontal, 16).padding(.bottom, 4) } }
     }
     private func artwork(_ side: CGFloat) -> some View {
         ZStack {
@@ -149,7 +149,7 @@ struct MediaCard: View {
             .animation(.easeOut(duration: 0.25), value: media.artwork)
     }
     private func transport(_ symbol: String, _ title: String, _ action: String) -> some View {
-        Button { media.command(action); Haptics.play(.generic) } label: { Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(.white.opacity(0.8)).frame(width: 34, height: 32).contentShape(Rectangle()) }.buttonStyle(PressStyle(scale: 0.85)).disabled(media.track == nil).help(title).accessibilityLabel(title)
+        Button { media.command(action); Haptics.play(.generic) } label: { Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(.white.opacity(0.8)).frame(width: 34, height: 32).contentShape(Rectangle()) }.buttonStyle(PressStyle(scale: 0.85)).disabled(media.track == nil).help(L(title)).accessibilityLabel(L(title))
     }
 }
 
@@ -235,8 +235,8 @@ struct AudioCard: View {
                     Text("\(Int((system.volume * 100).rounded()))").font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary).frame(width: 22)
                         .contentTransition(.numericText(value: system.volume)).animation(.easeOut(duration: 0.12), value: system.volume)
                 }.font(.system(size: 12))
-                if let error = system.audioError { Text(error).font(.system(size: 9)).foregroundStyle(Theme.orange).lineLimit(1).help(error) }
-                else { Text(system.outputName).font(.system(size: 9)).foregroundStyle(Theme.muted).lineLimit(1) }
+                if let error = system.audioError { Text(L(error)).font(.system(size: 9)).foregroundStyle(Theme.orange).lineLimit(1).help(L(error)) }
+                else { Text(L(system.outputName)).font(.system(size: 9)).foregroundStyle(Theme.muted).lineLimit(1) }
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }.onAppear { system.refreshOutputs() }
     }
@@ -265,7 +265,7 @@ struct NextEventCard: View {
                                     Text(event.title).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1)
                                     HStack(spacing: 5) {
                                         Circle().fill(Color(nsColor: event.color)).frame(width: 4, height: 4)
-                                        Text(event.allDay ? "Journée" : event.start.formatted(.dateTime.hour().minute())).font(.system(size: 10)).foregroundStyle(.secondary)
+                                        Text(event.allDay ? L("Journée") : event.start.formatted(.dateTime.hour().minute())).font(.system(size: 10)).foregroundStyle(.secondary)
                                     }
                                 }.frame(maxWidth: .infinity, alignment: .leading)
                             }.contentShape(Rectangle())

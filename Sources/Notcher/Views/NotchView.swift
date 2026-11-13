@@ -1,4 +1,5 @@
 import SwiftUI
+import NotcherCore
 import UniformTypeIdentifiers
 
 struct NotchView: View {
@@ -31,7 +32,7 @@ struct NotchView: View {
         .clipShape(NotchShape())
         .overlay(alignment: .bottom) {
             if model.expanded, let toast = model.toast {
-                Text(toast).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center).padding(.horizontal, 12).padding(.vertical, 7)
+                Text(L(toast)).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center).padding(.horizontal, 12).padding(.vertical, 7)
                     .background(Theme.raised, in: Capsule()).padding(.bottom, 8).padding(.horizontal, 40).allowsHitTesting(false)
                     .transition(.opacity.combined(with: .offset(y: 6)))
             }
@@ -99,7 +100,7 @@ struct NotchHeader: View {
                 HStack(spacing: 7) {
                     if let activity = model.activity {
                         Image(systemName: activity.symbol).foregroundStyle(activity.color ?? accent).contentTransition(.symbolEffect(.replace))
-                        if !model.presentationExpanded { Text(activity.title).font(.system(size: 10, weight: .medium)).lineLimit(1) }
+                        if !model.presentationExpanded { Text(L(activity.title)).font(.system(size: 10, weight: .medium)).lineLimit(1) }
                     } else { CompactMedia(media: model.media, height: model.notchHeight, idle: idle) }
                 }
                 .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .leading : .center)
@@ -178,6 +179,6 @@ struct PlaybackIndicator: View {
                     Capsule().frame(width: 2, height: playing ? (reduceMotion ? 10 : 4 + 11 * (0.5 + 0.5 * sin(time * 4 + Double(index) * 1.7))) : 3)
                 }
             }.frame(maxWidth: .infinity, maxHeight: .infinity)
-        }.accessibilityLabel(playing ? "Lecture en cours" : "En pause")
+        }.accessibilityLabel(L(playing ? "Lecture en cours" : "En pause"))
     }
 }

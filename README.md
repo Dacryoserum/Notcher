@@ -1,12 +1,16 @@
 # Notcher
 
-Une app macOS native en **SwiftUI + AppKit** qui transforme le notch en espace de travail. Interface française, fond noir et couleur secondaire personnalisable, stockage local, sans dépendance externe.
+Une app macOS native en **SwiftUI + AppKit** qui transforme le notch en espace de travail. Interface française et anglaise, fond noir et couleur secondaire personnalisable, stockage local, sans dépendance externe.
+
+> **English** — Notcher is a native macOS app (SwiftUI + AppKit) that turns the notch into a workspace: media controls, a file shelf, text sheets, agent quotas, tools, and an overview you compose from widgets. The interface is available in English and French and follows the system language; it can also be chosen in Settings → Behavior. Requires macOS 14 or later. Download the Apple silicon app from the [releases](https://github.com/Dacryoserum/Notcher/releases/latest), unzip it and move it to Applications, or build it on Apple silicon or Intel with `./Scripts/build.sh`. The download is ad hoc signed and not notarized: if macOS blocks the first launch, allow it in System Settings → Privacy & Security → Open Anyway. The rest of this document is in French.
 
 Notcher est une implémentation indépendante inspirée de NotchNook, pas une copie de son code, de ses ressources ou de sa marque.
 
 ## Lancer l’app
 
 **macOS 14 minimum**, Mac Apple silicon ou Intel. La compilation produit un binaire pour l’architecture du Mac utilisé.
+
+La [release v1.0.0](https://github.com/Dacryoserum/Notcher/releases/tag/v1.0.0) fournit une archive pour **Apple silicon (arm64)**. Décompresse-la et déplace `Notcher.app` dans Applications. Sur Intel, compile depuis les sources.
 
 L’application construite se trouve dans `dist/Notcher.app`. Double-clique dessus dans le Finder. Elle apparaît dans la barre des menus, sans icône permanente dans le Dock.
 
@@ -32,6 +36,8 @@ Dans **Réglages → Apparence**, un aperçu vivant du notch reflète chaque cho
 **Réglages → Widgets** compose l’aperçu : deux rangées de un à trois widgets, à déplacer par glisser-déposer, à élargir ou rétrécir, à ajouter ou retirer, avec le choix de la rangée la plus haute. Dix widgets sont disponibles (Médias, Pomodoro, Volume, Agenda, Texte, Presse-papiers, Dépôt, Batterie, Quotas, Horloge) et chacun adapte sa forme à sa case. Quand un widget reprend le contenu d’un onglet, cet onglet est renommé (« Texte » devient « Fiches », « Dépôt » devient « Fichiers », « Agents » devient « Détails ») et peut être masqué.
 
 **Réglages → Comportement** propose trois façons d’ouvrir le panneau : au survol, au clic, ou « survol puis clic » (le notch vibre et grossit légèrement au survol, un clic l’ouvre). Le volume suit les touches du clavier en temps réel, une lecture en pause depuis plusieurs minutes libère le notch fermé, le titre s’affiche brièvement quand la chanson change, et ⌘1 à ⌘5 changent d’onglet.
+
+L’interface existe en français et en anglais. Elle suit la langue du système ; **Réglages → Comportement → Langue** permet d’en imposer une. Le texte source est le français (`App/fr.lproj`), la traduction se trouve dans `App/en.lproj/Localizable.strings`.
 
 Si NotchNook ou un autre utilitaire occupe déjà le notch, quitte cet utilitaire pour éviter la superposition.
 
@@ -117,7 +123,7 @@ Cette version couvre les fonctions listées ci-dessus. Ce n’est **pas une pari
 
 La luminosité utilise DisplayServices et cible l’écran intégré compatible. Certaines sorties HDMI/USB n’exposent pas de volume système ; le curseur est alors désactivé. Les autorisations calendrier/caméra et la lecture active doivent être vérifiées sur le Mac utilisateur. Les appels de lecture/commande média dépendent d’interfaces non publiques.
 
-Le bundle est signé **ad hoc** pour le développement local, sans certificat Developer ID ni notarisation. Une distribution publique nécessite une signature et une notarisation avec un compte Apple Developer.
+Le bundle est signé **ad hoc**, sans certificat Developer ID ni notarisation. macOS peut donc bloquer son premier lancement après téléchargement. Après avoir déplacé l’app dans Applications et tenté de l’ouvrir, autorise son ouverture dans **Réglages Système → Confidentialité et sécurité → Ouvrir quand même**. La signature Developer ID et la notarisation nécessitent un compte Apple Developer.
 
 ## Vérifier et développer
 

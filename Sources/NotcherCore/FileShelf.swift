@@ -15,11 +15,11 @@ public enum ShelfError: LocalizedError {
     case tooLarge, unsafePath, missingFile, symbolicLink, containsShelf
     public var errorDescription: String? {
         switch self {
-        case .tooLarge: return "Le dépôt est limité à 2 Go. Libérez de la place ou choisissez un fichier plus petit."
-        case .unsafePath: return "Le nom de ce fichier n’est pas valide."
-        case .missingFile: return "Ce fichier n’est plus disponible."
-        case .symbolicLink: return "Ce dossier contient un lien symbolique. Ajoutez directement sa cible pour en conserver une copie indépendante."
-        case .containsShelf: return "Le dépôt ne peut pas être copié à l’intérieur de lui-même."
+        case .tooLarge: return L("Le dépôt est limité à 2 Go. Libérez de la place ou choisissez un fichier plus petit.")
+        case .unsafePath: return L("Le nom de ce fichier n’est pas valide.")
+        case .missingFile: return L("Ce fichier n’est plus disponible.")
+        case .symbolicLink: return L("Ce dossier contient un lien symbolique. Ajoutez directement sa cible pour en conserver une copie indépendante.")
+        case .containsShelf: return L("Le dépôt ne peut pas être copié à l’intérieur de lui-même.")
         }
     }
 }

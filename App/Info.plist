@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
+    <key>CFBundleDevelopmentRegion</key><string>en</string>
+    <key>CFBundleLocalizations</key><array><string>en</string><string>fr</string></array>
     <key>CFBundleExecutable</key><string>Notcher</string>
     <key>CFBundleIdentifier</key><string>fr.notcher.app</string>
     <key>CFBundleName</key><string>Notcher</string>
@@ -13,9 +15,9 @@
     <key>LSUIElement</key><true/>
     <key>NSHighResolutionCapable</key><true/>
     <key>NSPrincipalClass</key><string>NSApplication</string>
-    <key>NSCameraUsageDescription</key><string>Afficher votre caméra dans le miroir du notch, uniquement lorsque vous l'activez. Aucune image n'est enregistrée.</string>
-    <key>NSCalendarsFullAccessUsageDescription</key><string>Afficher vos prochains événements et ouvrir les liens de réunion depuis le notch.</string>
-    <key>NSAppleEventsUsageDescription</key><string>Afficher et contrôler la lecture de Spotify et Apple Music.</string>
-    <key>NSBluetoothAlwaysUsageDescription</key><string>Afficher les appareils Bluetooth connectés.</string>
-    <key>NSHumanReadableCopyright</key><string>Notcher — application indépendante.</string>
+    <key>NSCameraUsageDescription</key><string>Show your camera in the notch mirror, only when you turn it on. No images are recorded.</string>
+    <key>NSCalendarsFullAccessUsageDescription</key><string>Show your upcoming events and open meeting links from the notch.</string>
+    <key>NSAppleEventsUsageDescription</key><string>Show and control playback in Spotify and Apple Music.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key><string>Show connected Bluetooth devices.</string>
+    <key>NSHumanReadableCopyright</key><string>Notcher — independent application.</string>
 </dict></plist>

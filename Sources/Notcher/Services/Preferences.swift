@@ -25,10 +25,19 @@ import NotcherCore
     /// Stable tab keys, never display names: a renamed tab must not reappear.
     @Published var hiddenTabs: Set<String> { didSet { defaults.set(hiddenTabs.sorted(), forKey: "hiddenTabs") } }
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
+    /// "system", "fr" or "en". Stored as the standard AppleLanguages override; applies at next launch.
+    @Published var language: String {
+        didSet {
+            if language == "system" { defaults.removeObject(forKey: "AppleLanguages") } else { defaults.set([language], forKey: "AppleLanguages") }
+            defaults.set(language, forKey: "appLanguage")
+        }
+    }
     let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         defaults.register(defaults: ["openOnHover": true, "mediaRestMinutes": 5, "announceTrack": true, "haptics": true, "mediaEnabled": true, "retentionHours": 24, "showHUD": true])
+        let chosen = defaults.string(forKey: "appLanguage") ?? "system"
+        language = ["fr", "en"].contains(chosen) ? chosen : "system"
         homeLayout = defaults.data(forKey: "homeLayout").map { HomeLayout.restore($0) }
             ?? HomeLayout.migrating(slots: defaults.stringArray(forKey: "homeWidgets") ?? []) ?? .standard
         // Versions before 1.0 only knew "open on hover" on or off.
@@ -59,12 +68,12 @@ import NotcherCore
     }
     /// A tab whose content already sits on the overview as a widget is named after what only it offers.
     func title(for tab: NotchTab) -> String {
-        guard dashboardLayout == .overview else { return tab.rawValue }
+        guard dashboardLayout == .overview else { return L(tab.rawValue) }
         switch tab {
-        case .notes where homeLayout.contains(.note): return "Fiches"
-        case .files where homeLayout.contains(.files): return "Fichiers"
-        case .agents where homeLayout.contains(.agents): return "Détails"
-        default: return tab.rawValue
+        case .notes where homeLayout.contains(.note): return L("Fiches")
+        case .files where homeLayout.contains(.files): return L("Fichiers")
+        case .agents where homeLayout.contains(.agents): return L("Détails")
+        default: return L(tab.rawValue)
         }
     }
     func resetAppearance() {

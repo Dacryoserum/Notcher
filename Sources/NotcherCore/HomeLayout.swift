@@ -7,16 +7,16 @@ public enum HomeWidget: String, CaseIterable, Identifiable, Codable, Sendable {
     public var id: String { rawValue }
     public var title: String {
         switch self {
-        case .media: return "Médias"
-        case .focus: return "Pomodoro"
-        case .volume: return "Volume"
-        case .agenda: return "Agenda"
-        case .note: return "Texte"
-        case .clipboard: return "Presse-papiers"
-        case .files: return "Dépôt"
-        case .battery: return "Batterie"
-        case .agents: return "Quotas"
-        case .clock: return "Horloge"
+        case .media: return L("Médias")
+        case .focus: return L("Pomodoro")
+        case .volume: return L("Volume")
+        case .agenda: return L("Agenda")
+        case .note: return L("Texte")
+        case .clipboard: return L("Presse-papiers")
+        case .files: return L("Dépôt")
+        case .battery: return L("Batterie")
+        case .agents: return L("Quotas")
+        case .clock: return L("Horloge")
         }
     }
     public var symbol: String {
@@ -48,7 +48,7 @@ public struct HomeTile: Codable, Equatable, Identifiable, Sendable {
 public enum RowBalance: String, CaseIterable, Identifiable, Codable, Sendable {
     case top, even, bottom
     public var id: String { rawValue }
-    public var title: String { switch self { case .top: return "Haut plus grand"; case .even: return "Égales"; case .bottom: return "Bas plus grand" } }
+    public var title: String { switch self { case .top: return L("Haut plus grand"); case .even: return L("Égales"); case .bottom: return L("Bas plus grand") } }
 }
 
 /// Two rows of tiles. Every mutation leaves a layout that can be drawn: no duplicate, no overfull row,

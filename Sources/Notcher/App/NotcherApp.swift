@@ -93,22 +93,22 @@ import UserNotifications
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         item.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Notcher")
         let menu = NSMenu()
-        let toggle = NSMenuItem(title: "Ouvrir Notcher", action: #selector(toggleNotch), keyEquivalent: " ")
+        let toggle = NSMenuItem(title: L("Ouvrir Notcher"), action: #selector(toggleNotch), keyEquivalent: " ")
         toggle.keyEquivalentModifierMask = [.command, .shift]; toggle.target = self; menu.addItem(toggle)
-        let settings = NSMenuItem(title: "Réglages…", action: #selector(showSettings), keyEquivalent: ",")
+        let settings = NSMenuItem(title: L("Réglages…"), action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
         menu.addItem(.separator())
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0"
         let about = NSMenuItem(title: "Notcher \(version)", action: nil, keyEquivalent: ""); about.isEnabled = false
         menu.addItem(about)
-        let quit = NSMenuItem(title: "Quitter Notcher", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let quit = NSMenuItem(title: L("Quitter Notcher"), action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         menu.addItem(quit); item.menu = menu; statusItem = item
     }
     @objc private func toggleNotch() { controller?.toggle() }
     @objc func showSettings() {
         if let settingsWindow { settingsWindow.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true); return }
         let window = NSWindow(contentRect: NSRect(origin: .zero, size: SettingsView.size), styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView], backing: .buffered, defer: false)
-        window.title = "Réglages de Notcher"; window.isReleasedWhenClosed = false
+        window.title = L("Réglages de Notcher"); window.isReleasedWhenClosed = false
         window.titlebarAppearsTransparent = true; window.titleVisibility = .hidden
         window.backgroundColor = NSColor(white: 0.055, alpha: 1); window.isMovableByWindowBackground = false // Dragging a widget must never drag the window.
         window.contentView = NSHostingView(rootView: SettingsView(model: model).preferredColorScheme(.dark))

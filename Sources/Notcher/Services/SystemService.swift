@@ -1,4 +1,5 @@
 import AppKit
+import NotcherCore
 
 @MainActor final class SystemService: ObservableObject {
     @Published var volume: Double = 0

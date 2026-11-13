@@ -25,7 +25,7 @@ actor ShelfRepository {
     var onAdded: ((Int) -> Void)?
     func start(retentionHours: Int) {
         do { repository = try ShelfRepository(root: root) }
-        catch { self.error = "Impossible d’ouvrir le dépôt : \(error.localizedDescription)"; return }
+        catch { self.error = L("Impossible d’ouvrir le dépôt : %@", error.localizedDescription); return }
         purge(hours: retentionHours)
     }
     func purge(hours: Int) {
@@ -56,7 +56,7 @@ actor ShelfRepository {
                 try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
                 defer { try? FileManager.default.removeItem(at: directory) }
                 let timestamp = Date().formatted(.dateTime.hour().minute().second()).replacingOccurrences(of: ":", with: "-")
-                let url = directory.appendingPathComponent("Texte \(timestamp)").appendingPathExtension("txt")
+                let url = directory.appendingPathComponent(L("Texte %@", timestamp)).appendingPathExtension("txt")
                 try Data(value.utf8).write(to: url)
                 if let repository { items = try await repository.add(url); onAdded?(1) }
             } catch { self.error = error.localizedDescription }
@@ -65,7 +65,7 @@ actor ShelfRepository {
     func remove(_ item: ShelfItem) { Task { do { items = try await repository?.remove(item.id) ?? items } catch { self.error = error.localizedDescription } } }
     func pin(_ item: ShelfItem) { Task { do { items = try await repository?.pin(item.id) ?? items } catch { self.error = error.localizedDescription } } }
     func chooseFiles(onFinish: @escaping () -> Void = {}) {
-        let panel = NSOpenPanel(); panel.allowsMultipleSelection = true; panel.canChooseDirectories = true; panel.prompt = "Ajouter au dépôt"
+        let panel = NSOpenPanel(); panel.allowsMultipleSelection = true; panel.canChooseDirectories = true; panel.prompt = L("Ajouter au dépôt")
         panel.begin { [weak self] result in Task { @MainActor in if result == .OK { self?.add(panel.urls) }; onFinish() } }
     }
     func accept(_ providers: [NSItemProvider]) -> Bool {
@@ -162,7 +162,7 @@ private final class NoteFileWriter: @unchecked Sendable {
         writer.write(book) { [weak self] message in
             Task { @MainActor in
                 guard let self, self.writeRevision == revision else { return }
-                self.error = message.map { "Échec de la sauvegarde : " + $0 }
+                self.error = message.map { L("Échec de la sauvegarde : %@", $0) }
             }
         }
     }
@@ -171,7 +171,7 @@ private final class NoteFileWriter: @unchecked Sendable {
         guard canSave else { return }
         writeRevision += 1
         do { try writer.flush(book); error = nil }
-        catch { self.error = "Échec de la sauvegarde des fiches : \(error.localizedDescription)" }
+        catch { self.error = L("Échec de la sauvegarde des fiches : %@", error.localizedDescription) }
     }
     func export(onFinish: @escaping () -> Void = {}) {
         guard let note = selected else { onFinish(); return }

@@ -1,4 +1,5 @@
 import Foundation
+import NotcherCore
 import CoreAudio
 import AudioToolbox
 import CoreGraphics

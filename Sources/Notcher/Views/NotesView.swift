@@ -14,7 +14,7 @@ struct NotesView: View {
         VStack(spacing: 10) {
             HStack(spacing: 8) {
                 let id = notes.selectedID
-                TextField("Sans titre", text: Binding(get: { notes.selected?.title ?? "" }, set: { notes.update(id: id, title: $0) }))
+                TextField("Sans titre", text: Binding(get: { notes.selected.map { $0.title == "Sans titre" ? "" : $0.title } ?? "" }, set: { notes.update(id: id, title: $0) }))
                     .textFieldStyle(.plain).font(.system(size: 15, weight: .medium))
                 Spacer()
                 IconButton(symbol: "square.and.arrow.up", help: "Exporter la fiche") { model.dialogOpen = true; notes.export { model.dialogOpen = false } }
@@ -37,7 +37,7 @@ struct NotesView: View {
             HStack(spacing: 8) {
                 Menu {
                     ForEach(TextOperation.allCases) { operation in
-                        Button(operation.rawValue) {
+                        Button(L(operation.rawValue)) {
                             if let selected = notes.selected { undoText[selected.id] = selected.text }
                             notes.transform(operation)
                         }
@@ -47,7 +47,7 @@ struct NotesView: View {
                     IconButton(symbol: "arrow.uturn.backward", help: "Annuler la transformation") { notes.update(text: previous); undoText[id] = nil }
                 }
                 Spacer()
-                Text("\(notes.selected?.text.count ?? 0) caractères").font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
+                Text(L("%lld caractères", notes.selected?.text.count ?? 0)).font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.muted)
                 CapsuleButton(title: "Copier", symbol: "doc.on.doc") { copyToClipboard(notes.selected?.text ?? ""); model.notify("Texte copié") }
             }
             ErrorLine(message: notes.error)
@@ -82,8 +82,8 @@ struct NotesView: View {
                                     .overlay(alignment: .leading) { if active { Capsule().fill(accent).frame(width: 2, height: 12) } }
                                     .contentShape(Rectangle())
                             }.buttonStyle(PressStyle(scale: 0.9)).id(note.id)
-                                .help("Fiche \(index + 1) · " + (note.title == "Sans titre" ? String(note.text.prefix(60)) : note.title))
-                                .accessibilityLabel("Fiche \(index + 1), \(note.title)")
+                                .help(L("Fiche %lld · ", index + 1) + (note.title == "Sans titre" ? String(note.text.prefix(60)) : note.title))
+                                .accessibilityLabel(L("Fiche %lld, %@", index + 1, L(note.title)))
                                 .accessibilityAddTraits(active ? .isSelected : [])
                         }
                     }

@@ -1,4 +1,5 @@
 import SwiftUI
+import NotcherCore
 
 /// Each sheet keeps its own native text view and undo manager. Delayed edits carry their sheet ID.
 struct ScratchEditor: NSViewRepresentable {
@@ -124,7 +125,7 @@ final class SheetTextView: NSTextView {
         isAutomaticQuoteSubstitutionEnabled = false; isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
         isContinuousSpellCheckingEnabled = false
-        setAccessibilityLabel("Texte de la fiche")
+        setAccessibilityLabel(L("Texte de la fiche"))
     }
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         // The accessory app has no visible Edit menu; keep the native editing shortcuts available.

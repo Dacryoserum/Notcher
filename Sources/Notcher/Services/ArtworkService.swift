@@ -1,4 +1,5 @@
 import AppKit
+import NotcherCore
 import ImageIO
 
 struct SpotifyArtwork: Decodable, Sendable {

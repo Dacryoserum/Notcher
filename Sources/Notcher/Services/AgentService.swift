@@ -165,7 +165,7 @@ import NotcherCore
     private func checkLimits(_ usage: AgentUsage) {
         for window in usage.windows where window.usedPercent >= 90 && !window.isExpired() {
             let key = "\(usage.provider)-\(window.id)-\(window.resetsAt?.timeIntervalSince1970 ?? 0)"
-            if alerted.insert(key).inserted { onLimit?("\(usage.provider) · \(Int(window.usedPercent)) % utilisés") }
+            if alerted.insert(key).inserted { onLimit?(L("%@ · %lld %% utilisés", usage.provider, Int(window.usedPercent))) }
         }
     }
     func installClaude() throws {

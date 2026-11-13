@@ -1,4 +1,5 @@
 import SwiftUI
+import NotcherCore
 
 enum Theme {
     static let accent = Color(red: 0.70, green: 0.93, blue: 0.66)
@@ -68,7 +69,7 @@ struct IconButton: View {
         }
             .buttonStyle(PressStyle()).onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: hovering)
-            .help(help).accessibilityLabel(help)
+            .help(L(help)).accessibilityLabel(L(help))
     }
 }
 struct CapsuleButton: View {
@@ -80,7 +81,7 @@ struct CapsuleButton: View {
     @State private var hovering = false
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 6) { if let symbol { Image(systemName: symbol).contentTransition(.symbolEffect(.replace)) }; Text(title) }
+            HStack(spacing: 6) { if let symbol { Image(systemName: symbol).contentTransition(.symbolEffect(.replace)) }; Text(L(title)) }
                 .font(.system(size: 11, weight: .semibold)).padding(.horizontal, 12).padding(.vertical, 8)
                 .foregroundStyle(primary ? accent.contrastingText : Color.white.opacity(0.85))
                 .background(primary ? accent.opacity(hovering ? 0.88 : 1) : Color.white.opacity(hovering ? 0.13 : 0.075), in: Capsule())
@@ -91,7 +92,7 @@ struct CapsuleButton: View {
 }
 struct Eyebrow: View {
     let text: String
-    var body: some View { Text(text).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary) }
+    var body: some View { Text(L(text)).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary) }
 }
 struct EmptyState: View {
     @Environment(\.notcherAccent) private var accent
@@ -100,13 +101,13 @@ struct EmptyState: View {
     var body: some View {
         VStack(spacing: 10) {
             Image(systemName: symbol).font(.system(size: 27, weight: .light)).foregroundStyle(accent).frame(height: 36)
-            if !title.isEmpty { Text(title).font(.system(size: 12)).foregroundStyle(.secondary) }
+            if !title.isEmpty { Text(L(title)).font(.system(size: 12)).foregroundStyle(.secondary) }
         }.frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 struct ErrorLine: View {
     let message: String?
-    var body: some View { if let message { Label(message, systemImage: "info.circle").font(.system(size: 10)).foregroundStyle(Theme.orange).lineLimit(3).textSelection(.enabled) } }
+    var body: some View { if let message { Label(L(message), systemImage: "info.circle").font(.system(size: 10)).foregroundStyle(Theme.orange).lineLimit(3).textSelection(.enabled) } }
 }
 
 struct NotchShape: Shape {

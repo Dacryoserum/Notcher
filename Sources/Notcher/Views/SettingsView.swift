@@ -61,7 +61,7 @@ struct SettingsView: View {
                         withAnimation(.snappy(duration: 0.22)) { pane = item }
                         error = nil
                     } label: {
-                        Label(item.rawValue, systemImage: item.symbol).font(.system(size: 12, weight: .medium)).lineLimit(1).fixedSize()
+                        Label(L(item.rawValue), systemImage: item.symbol).font(.system(size: 12, weight: .medium)).lineLimit(1).fixedSize()
                             .padding(.horizontal, 10).frame(height: 30)
                             .foregroundStyle(pane == item ? accent.contrastingText : Color.white.opacity(0.65))
                             .background { if pane == item { Capsule().fill(accent).matchedGeometryEffect(id: "pane", in: paneMarker) } }
@@ -160,7 +160,7 @@ private struct AppearancePane: View {
                 Circle().fill(color).frame(width: 26, height: 26)
                 if selected { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)).foregroundStyle(color.contrastingText) }
             }.frame(width: 36, height: 36).contentShape(Circle())
-        }.buttonStyle(.plain).accessibilityLabel("Couleur #" + hex).accessibilityAddTraits(selected ? .isSelected : [])
+        }.buttonStyle(.plain).accessibilityLabel(L("Couleur #") + hex).accessibilityAddTraits(selected ? .isSelected : [])
     }
     private func tabChip(_ tab: NotchTab) -> some View {
         let locked = tab == .home
@@ -180,8 +180,8 @@ private struct AppearancePane: View {
             .overlay(Capsule().strokeBorder(visible ? accent.opacity(0.35) : Theme.border))
             .contentShape(Capsule())
         }.buttonStyle(.plain).disabled(locked)
-            .help(locked ? "L’aperçu reste toujours affiché" : visible ? "Masquer cet onglet" : "Afficher cet onglet")
-            .accessibilityLabel(tab.rawValue).accessibilityValue(visible ? "Affiché" : "Masqué")
+            .help(L(locked ? "L’aperçu reste toujours affiché" : visible ? "Masquer cet onglet" : "Afficher cet onglet"))
+            .accessibilityLabel(preferences.title(for: tab)).accessibilityValue(L(visible ? "Affiché" : "Masqué"))
     }
 }
 
@@ -242,7 +242,7 @@ private struct NotchPreview: View {
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: preferences.panelSize)
             .animation(reduceMotion ? nil : .snappy(duration: 0.25), value: preferences.compactStyle)
             .animation(reduceMotion ? nil : .snappy(duration: 0.2), value: preferences.hiddenTabs)
-            Label(open ? "Clique pour replier" : "Clique pour déplier", systemImage: "hand.tap")
+            Label(L(open ? "Clique pour replier" : "Clique pour déplier"), systemImage: "hand.tap")
                 .font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                 .padding(.horizontal, 10).frame(height: 22).background(.black.opacity(0.35), in: Capsule())
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing).padding(10)
@@ -276,8 +276,8 @@ private struct SettingsGroup<Content: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(title).font(.system(size: 13, weight: .semibold))
-                if let hint { Text(hint).font(.system(size: 11)).foregroundStyle(Theme.muted) }
+                Text(L(title)).font(.system(size: 13, weight: .semibold))
+                if let hint { Text(L(hint)).font(.system(size: 11)).foregroundStyle(Theme.muted) }
             }
             content
         }.frame(maxWidth: .infinity, alignment: .leading)
@@ -298,7 +298,7 @@ private struct OptionTile<Art: View>: View {
                 art.frame(maxWidth: .infinity).frame(height: 58)
                 HStack(spacing: 5) {
                     Image(systemName: selected ? "checkmark.circle.fill" : "circle").font(.system(size: 10))
-                    Text(title).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                    Text(L(title)).font(.system(size: 11, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
                 }.foregroundStyle(selected ? accent : Color.white.opacity(0.6))
             }
             .padding(.horizontal, 8).padding(.vertical, 10).frame(maxWidth: .infinity)
@@ -307,7 +307,7 @@ private struct OptionTile<Art: View>: View {
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }.buttonStyle(.plain).onHover { hovering = $0 }
             .animation(.easeOut(duration: 0.12), value: selected)
-            .accessibilityLabel(title).accessibilityAddTraits(selected ? .isSelected : [])
+            .accessibilityLabel(L(title)).accessibilityAddTraits(selected ? .isSelected : [])
     }
 }
 
@@ -478,8 +478,8 @@ private struct SettingRow<Control: View>: View {
                 Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(accent)
                     .frame(width: 30, height: 30).background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.system(size: 13, weight: .medium))
-                    if let subtitle { Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                    Text(L(title)).font(.system(size: 13, weight: .medium))
+                    if let subtitle { Text(L(subtitle)).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
                 }
                 Spacer(minLength: 14)
                 control
@@ -491,7 +491,7 @@ private struct SettingRow<Control: View>: View {
 private struct Switch: View {
     let title: String
     @Binding var isOn: Bool
-    var body: some View { Toggle(title, isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.small).accessibilityLabel(title) }
+    var body: some View { Toggle(L(title), isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.small).accessibilityLabel(L(title)) }
 }
 
 private struct BehaviorPane: View {
@@ -516,7 +516,7 @@ private struct BehaviorPane: View {
                     SettingRow(symbol: "keyboard", title: "Raccourci clavier", subtitle: "Ouvre ou referme le panneau depuis n’importe quelle app.", divider: false) {
                         HStack(spacing: 4) {
                             ForEach(["⌘", "⇧", "Espace"], id: \.self) { key in
-                                Text(key).font(.system(size: 11, weight: .medium)).padding(.horizontal, 8).frame(height: 24)
+                                Text(L(key)).font(.system(size: 11, weight: .medium)).padding(.horizontal, 8).frame(height: 24)
                                     .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border))
                             }
                         }
@@ -544,6 +544,14 @@ private struct BehaviorPane: View {
                             ForEach(screens, id: \.id) { Text($0.name).tag($0.id) }
                         }.labelsHidden().frame(width: 230)
                     }
+                    SettingRow(symbol: "globe", title: "Langue", subtitle: "Le changement s’applique à la prochaine ouverture de Notcher.") {
+                        HStack(spacing: 8) {
+                            if preferences.language != launchLanguage { CapsuleButton(title: "Relancer", symbol: "arrow.clockwise", primary: true) { relaunch() } }
+                            Picker("Langue", selection: $preferences.language) {
+                                Text("Système").tag("system"); Text(verbatim: "Français").tag("fr"); Text(verbatim: "English").tag("en")
+                            }.labelsHidden().frame(width: 130)
+                        }
+                    }
                     SettingRow(symbol: "power", title: "Ouvrir à la connexion", subtitle: "Notcher démarre avec ta session.", divider: false) {
                         Switch(title: "Ouvrir à la connexion", isOn: Binding(get: { preferences.launchAtLogin }, set: { value in
                             do { try preferences.setLogin(value); error = nil } catch let failure { error = failure.localizedDescription }
@@ -552,6 +560,15 @@ private struct BehaviorPane: View {
                 }
             }
         }
+    }
+    private static let languageAtLaunch = UserDefaults.standard.string(forKey: "appLanguage") ?? "system"
+    private var launchLanguage: String { Self.languageAtLaunch }
+    /// Starts a fresh copy once this one has quit, so the single-instance check lets it through.
+    private func relaunch() {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-c", "sleep 0.8; /usr/bin/open \"$0\"", Bundle.main.bundlePath]
+        do { try process.run(); NSApp.terminate(nil) } catch let failure { error = failure.localizedDescription }
     }
     /// Two identical monitors share a name; the display number keeps every entry distinct.
     private var screens: [(id: Int, name: String)] {
@@ -645,14 +662,14 @@ private struct WidgetsPane: View {
             if preferences.dashboardLayout != .overview {
                 HStack(spacing: 12) {
                     Image(systemName: "info.circle").foregroundStyle(accent)
-                    Text("L’aperçu utilise la disposition « \(preferences.dashboardLayout.title) ». Les widgets s’affichent avec la disposition « Complet ».").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(L("L’aperçu utilise la disposition « %@ ». Les widgets s’affichent avec la disposition « Complet ».", preferences.dashboardLayout.title)).font(.system(size: 11)).foregroundStyle(.secondary)
                     Spacer(minLength: 8)
                     CapsuleButton(title: "Utiliser Complet", primary: true) { preferences.dashboardLayout = .overview }
                 }.padding(12).background(Theme.surface, in: RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.border))
             }
             SettingsGroup(title: "Ton aperçu", hint: "Glisse un widget pour le déplacer") {
                 board
-                Text(notice ?? "Chaque rangée accepte jusqu’à trois widgets. Un widget large prend deux fois la place d’un étroit, et son contenu s’adapte à sa taille.")
+                Text(L(notice ?? "Chaque rangée accepte jusqu’à trois widgets. Un widget large prend deux fois la place d’un étroit, et son contenu s’adapte à sa taille."))
                     .font(.system(size: 11)).foregroundStyle(notice == nil ? Color.secondary : Theme.orange).fixedSize(horizontal: false, vertical: true)
             }
             SettingsGroup(title: "Ajouter", hint: layout.available.isEmpty ? "Tous les widgets sont déjà sur l’aperçu" : "Clique, ou glisse vers une rangée") {
@@ -667,7 +684,7 @@ private struct WidgetsPane: View {
                             .padding(.horizontal, 11).frame(height: 30).foregroundStyle(.white.opacity(0.85))
                             .background(Theme.surface, in: Capsule()).overlay(Capsule().strokeBorder(Theme.border)).contentShape(Capsule())
                         }.buttonStyle(PressStyle(scale: 0.96)).draggable(widget.rawValue)
-                            .accessibilityLabel("Ajouter \(widget.title)")
+                            .accessibilityLabel(L("Ajouter %@", widget.title))
                     }
                 }
             }
@@ -743,11 +760,11 @@ private struct WidgetsPane: View {
             }.foregroundStyle(accent).padding(.horizontal, 4)
             VStack {
                 HStack(spacing: 4) {
-                    control(tile.wide ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", tile.wide ? "Rendre \(widget.title) étroit" : "Rendre \(widget.title) large") {
+                    control(tile.wide ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right", L(tile.wide ? "Rendre %@ étroit" : "Rendre %@ large", widget.title)) {
                         change { $0.setWide(widget, !tile.wide) }
                     }
                     Spacer(minLength: 0)
-                    if layout.widgets.count > 1 { control("xmark", "Retirer \(widget.title)") { change { $0.remove(widget) } } }
+                    if layout.widgets.count > 1 { control("xmark", L("Retirer %@", widget.title)) { change { $0.remove(widget) } } }
                 }
                 Spacer(minLength: 0)
             }.padding(5)
@@ -761,8 +778,8 @@ private struct WidgetsPane: View {
                 .foregroundStyle(accent.contrastingText).background(accent, in: Capsule())
         }
         .dropDestination(for: String.self) { items, _ in drop(items, row: row, index: index) } isTargeted: { inside in target = inside ? widget.rawValue : (target == widget.rawValue ? nil : target) }
-        .help("Glisser pour déplacer \(widget.title)")
-        .accessibilityElement(children: .contain).accessibilityLabel("\(widget.title), rangée \(row + 1), \(tile.wide ? "large" : "étroit")")
+        .help(L("Glisser pour déplacer %@", widget.title))
+        .accessibilityElement(children: .contain).accessibilityLabel(L("%@, rangée %lld, %@", widget.title, row + 1, L(tile.wide ? "large" : "étroit")))
     }
     private func control(_ symbol: String, _ help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -778,7 +795,7 @@ private struct WidgetsPane: View {
                 SettingsCard {
                     ForEach(Array(renamed.enumerated()), id: \.element.id) { index, tab in
                         let hidden = preferences.hiddenTabs.contains(tab.key)
-                        SettingRow(symbol: tab.symbol, title: "« \(tab.rawValue) » devient « \(preferences.title(for: tab)) »",
+                        SettingRow(symbol: tab.symbol, title: L("« %@ » devient « %@ »", L(tab.rawValue), preferences.title(for: tab)),
                                    subtitle: "Le widget est sur l’aperçu ; l’onglet garde la vue complète. Tu peux aussi le masquer.", divider: index < renamed.count - 1) {
                             CapsuleButton(title: hidden ? "Afficher l’onglet" : "Masquer l’onglet", symbol: hidden ? "eye" : "eye.slash") {
                                 if hidden { preferences.hiddenTabs.remove(tab.key) } else { preferences.hiddenTabs.insert(tab.key) }

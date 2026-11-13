@@ -35,7 +35,7 @@ public enum UsageParser {
     public static func claude(_ data: Data, capturedAt: Date = Date()) throws -> AgentUsage {
         let root = try object(data)
         let limits = root["rate_limits"] as? [String: Any] ?? [:]
-        let windows = [("five_hour", "5 heures"), ("seven_day", "7 jours"), ("spend_limit", "Dépenses")].compactMap { key, title -> UsageWindow? in
+        let windows = [("five_hour", L("5 heures")), ("seven_day", L("7 jours")), ("spend_limit", L("Dépenses"))].compactMap { key, title -> UsageWindow? in
             guard let item = limits[key] as? [String: Any], let percent = number(item["used_percentage"]), percent >= 0 else { return nil }
             return UsageWindow(id: key, title: title, usedPercent: percent, resetsAt: epoch(item["resets_at"]))
         }
@@ -59,10 +59,10 @@ public enum UsageParser {
             guard let item = limits[key] as? [String: Any], let percent = number(item["usedPercent"]), percent >= 0 else { return nil }
             let minutes = number(item["windowDurationMins"])
             let title: String
-            if let minutes, minutes >= 1440 { title = "\(Int(minutes / 1440)) jours" }
-            else if let minutes, minutes >= 60 { title = "\(Int(minutes / 60)) heures" }
+            if let minutes, minutes >= 1440 { title = L("%lld jours", Int(minutes / 1440)) }
+            else if let minutes, minutes >= 60 { title = L("%lld heures", Int(minutes / 60)) }
             else if let minutes { title = "\(Int(minutes)) min" }
-            else { title = key == "primary" ? "Session" : "Semaine" }
+            else { title = key == "primary" ? L("Session") : L("Semaine") }
             return UsageWindow(id: key, title: title, usedPercent: percent, resetsAt: epoch(item["resetsAt"]))
         }
         return AgentUsage(provider: "Codex", windows: windows, capturedAt: capturedAt)

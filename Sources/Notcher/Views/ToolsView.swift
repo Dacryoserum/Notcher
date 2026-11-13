@@ -1,4 +1,5 @@
 import SwiftUI
+import NotcherCore
 import AVFoundation
 import PDFKit
 import UniformTypeIdentifiers
@@ -17,7 +18,7 @@ struct ToolsView: View {
                 HStack(spacing: 5) {
                     ForEach(ToolTab.allCases) { item in
                         Button { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.14)) { model.toolTab = item } } label: {
-                            Text(item.rawValue).font(.system(size: 10, weight: .medium)).padding(.horizontal, 12).frame(height: 34)
+                            Text(L(item.rawValue)).font(.system(size: 10, weight: .medium)).padding(.horizontal, 12).frame(height: 34)
                                 .foregroundStyle(model.toolTab == item ? .white : .secondary)
                                 .background(model.toolTab == item ? Theme.raised : .clear, in: Capsule())
                                 .contentShape(Rectangle())
@@ -212,7 +213,7 @@ struct SystemView: View {
                             .frame(width: 36, height: 36).background(system.awake ? accent.opacity(0.12) : Theme.raised, in: RoundedRectangle(cornerRadius: 10))
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Éveil").font(.system(size: 12, weight: .medium))
-                            Text(system.awake ? "Activé" : "Désactivé").font(.system(size: 10)).foregroundStyle(.secondary)
+                            Text(L(system.awake ? "Activé" : "Désactivé")).font(.system(size: 10)).foregroundStyle(.secondary)
                         }
                         Spacer()
                         Toggle("Garder le Mac éveillé", isOn: Binding(get: { system.awake }, set: { _ in system.toggleAwake() })).labelsHidden().toggleStyle(.switch).controlSize(.small)

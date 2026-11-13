@@ -1,4 +1,5 @@
 import AppKit
+import NotcherCore
 import Foundation
 
 enum AppPaths {
@@ -19,9 +20,9 @@ enum CommandError: LocalizedError {
     case timeout, failed(String), unavailable
     var errorDescription: String? {
         switch self {
-        case .timeout: return "Le service n’a pas répondu à temps."
-        case .failed(let reason): return reason
-        case .unavailable: return "Ce service n’est pas disponible sur ce Mac."
+        case .timeout: return L("Le service n’a pas répondu à temps.")
+        case .failed(let reason): return L(reason)
+        case .unavailable: return L("Ce service n’est pas disponible sur ce Mac.")
         }
     }
 }

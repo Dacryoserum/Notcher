@@ -44,7 +44,7 @@ private struct WidgetHeader: View {
             if let open {
                 Button(action: open) {
                     Image(systemName: "arrow.up.right").font(.system(size: 9)).foregroundStyle(Theme.muted).frame(width: 18, height: 16).contentShape(Rectangle())
-                }.buttonStyle(PressStyle()).help("Ouvrir en grand").accessibilityLabel("Ouvrir \(title) en grand")
+                }.buttonStyle(PressStyle()).help("Ouvrir en grand").accessibilityLabel(L("Ouvrir %@ en grand", L(title)))
             }
         }.frame(height: 16)
     }
@@ -84,8 +84,8 @@ private struct AgendaWidget: View {
         }
     }
     private func when(_ event: CalendarItem) -> String {
-        let day = Calendar.current.isDateInToday(event.start) ? "Aujourd’hui" : Calendar.current.isDateInTomorrow(event.start) ? "Demain" : event.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-        return event.allDay ? day + " · journée" : day + " · " + event.start.formatted(.dateTime.hour().minute())
+        let day = Calendar.current.isDateInToday(event.start) ? L("Aujourd’hui") : Calendar.current.isDateInTomorrow(event.start) ? L("Demain") : event.start.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        return event.allDay ? day + L(" · journée") : day + " · " + event.start.formatted(.dateTime.hour().minute())
     }
 }
 
@@ -167,7 +167,7 @@ private struct FilesWidget: View {
                             }.frame(maxWidth: .infinity).contentShape(Rectangle())
                                 .onTapGesture(count: 2) { NSWorkspace.shared.open(url) }
                                 .onDrag { NSItemProvider(contentsOf: url) ?? NSItemProvider() }
-                                .help(item.name + " · glisser pour exporter, double-clic pour ouvrir")
+                                .help(item.name + L(" · glisser pour exporter, double-clic pour ouvrir"))
                         }
                     }
                     Spacer(minLength: 0)
@@ -202,7 +202,7 @@ private struct BatteryWidget: View {
                     Image(systemName: symbol).font(.system(size: compact ? 15 : 20)).foregroundStyle((system.battery ?? 100) <= 12 && !system.charging ? Theme.orange : accent)
                         .contentTransition(.symbolEffect(.replace))
                 }
-                Text(system.battery == nil ? "Sur secteur" : system.charging ? "En charge" : "Sur batterie").font(.system(size: 9)).foregroundStyle(Theme.muted).lineLimit(1)
+                Text(L(system.battery == nil ? "Sur secteur" : system.charging ? "En charge" : "Sur batterie")).font(.system(size: 9)).foregroundStyle(Theme.muted).lineLimit(1)
             }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                 .animation(.easeOut(duration: 0.2), value: system.battery)
         }
@@ -269,7 +269,7 @@ private struct ClockWidget: View {
                     }.lineLimit(1).minimumScaleFactor(0.6)
                     Text(context.date.formatted(narrow ? .dateTime.weekday(.abbreviated).day().month(.abbreviated) : .dateTime.weekday(.wide).day().month(.wide)).capitalized)
                         .font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(1)
-                    if large { Text("Semaine \(Calendar.current.component(.weekOfYear, from: context.date))").font(.system(size: 9)).foregroundStyle(Theme.muted) }
+                    if large { Text(L("Semaine %lld", Calendar.current.component(.weekOfYear, from: context.date))).font(.system(size: 9)).foregroundStyle(Theme.muted) }
                     Spacer(minLength: 0)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
             }

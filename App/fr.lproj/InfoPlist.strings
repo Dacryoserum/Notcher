@@ -1,0 +1,5 @@
+"NSCameraUsageDescription" = "Afficher votre caméra dans le miroir du notch, uniquement lorsque vous l’activez. Aucune image n’est enregistrée.";
+"NSCalendarsFullAccessUsageDescription" = "Afficher vos prochains événements et ouvrir les liens de réunion depuis le notch.";
+"NSAppleEventsUsageDescription" = "Afficher et contrôler la lecture de Spotify et Apple Music.";
+"NSBluetoothAlwaysUsageDescription" = "Afficher les appareils Bluetooth connectés.";
+"NSHumanReadableCopyright" = "Notcher — application indépendante.";
