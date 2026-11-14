@@ -8,7 +8,7 @@ actor ShelfRepository {
     init(root: URL) throws { store = try FileShelfStore(root: root) }
     func items() -> [ShelfItem] { store.items }
     func add(_ url: URL) throws -> [ShelfItem] { try store.add(url); return store.items }
-    func remove(_ id: UUID) throws -> [ShelfItem] { try store.remove(id); return store.items }
+    func remove(_ ids: Set<UUID>) throws -> [ShelfItem] { try store.remove(ids); return store.items }
     func pin(_ id: UUID) throws -> [ShelfItem] { try store.togglePin(id); return store.items }
     func purge(hours: Int) throws -> [ShelfItem] {
         if hours > 0 { try store.purge(olderThan: Date().addingTimeInterval(-Double(hours) * 3600)) }
@@ -17,7 +17,28 @@ actor ShelfRepository {
 }
 
 @MainActor final class ShelfService: ObservableObject {
-    @Published var items: [ShelfItem] = []
+    /// What the repository holds, including copies whose removal can still be undone.
+    @Published private var stored: [ShelfItem] = []
+    /// Removed from view, deleted from disk once the undo window has passed.
+    @Published private var pending: Set<UUID> = []
+    /// Past the undo window, being deleted from disk: never shown again.
+    @Published private var deleting: Set<UUID> = []
+    @Published var selection: Set<UUID> = []
+    /// The search typed above the cards; every action on "all" means all that is shown.
+    @Published var query = ""
+    var visible: [ShelfItem] {
+        let all = items
+        return query.isEmpty ? all : all.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
+    /// Anchor of a ⇧-click range.
+    var selectionAnchor: UUID?
+    private var pendingTask: Task<Void, Never>?
+    /// How long a removal can be undone.
+    static let undoWindow: TimeInterval = 5
+    var items: [ShelfItem] {
+        get { pending.isEmpty && deleting.isEmpty ? stored : stored.filter { !pending.contains($0.id) && !deleting.contains($0.id) } }
+        set { stored = newValue; selection.formIntersection(Set(newValue.map(\.id))) }
+    }
     @Published var importing = false
     @Published var error: String?
     let root = AppPaths.support.appendingPathComponent("Shelf", isDirectory: true)
@@ -62,8 +83,63 @@ actor ShelfRepository {
             } catch { self.error = error.localizedDescription }
         }
     }
-    func remove(_ item: ShelfItem) { Task { do { items = try await repository?.remove(item.id) ?? items } catch { self.error = error.localizedDescription } } }
-    func pin(_ item: ShelfItem) { Task { do { items = try await repository?.pin(item.id) ?? items } catch { self.error = error.localizedDescription } } }
+    func remove(_ item: ShelfItem) { remove([item.id]) }
+    /// Hides the copies at once; they are deleted when the undo window closes, or by the next removal.
+    @discardableResult func remove(_ ids: Set<UUID>) -> Int {
+        let removed = ids.subtracting(pending).intersection(Set(stored.map(\.id)))
+        guard !removed.isEmpty else { return 0 }
+        commitRemovals()
+        pending = removed
+        selection.subtract(removed)
+        pendingTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(Self.undoWindow)) } catch { return }
+            self?.commitRemovals()
+        }
+        return removed.count
+    }
+    /// The copies not kept with a pin.
+    var unpinned: Set<UUID> { Set(visible.filter { !$0.isPinned }.map(\.id)) }
+    var canUndo: Bool { !pending.isEmpty }
+    func undoRemoval() {
+        pendingTask?.cancel(); pendingTask = nil
+        pending = []
+    }
+    func commitRemovals() {
+        pendingTask?.cancel(); pendingTask = nil
+        let ids = pending
+        pending = []
+        guard !ids.isEmpty, let repository else { return }
+        deleting.formUnion(ids)
+        let previous = deletion
+        deletion = Task {
+            await previous?.value
+            do { stored = try await repository.remove(ids) } catch { self.error = error.localizedDescription }
+            deleting.subtract(ids)
+        }
+    }
+    /// Deletions still owed to the disk, chained so they finish in order.
+    private var deletion: Task<Void, Never>?
+    /// Whether quitting now would leave removed copies on disk.
+    var hasUnfinishedRemovals: Bool { !pending.isEmpty || !deleting.isEmpty }
+    /// Deletes everything removed so far, including copies still in their undo window. Used before quitting.
+    func finishRemovals() async {
+        commitRemovals()
+        await deletion?.value
+    }
+    func selected() -> [ShelfItem] { items.filter { selection.contains($0.id) } }
+    /// Finder rules: a click selects one card, ⌘ adds or removes it, ⇧ extends from the last one clicked.
+    func click(_ item: ShelfItem, command: Bool, shift: Bool, among visible: [ShelfItem]) {
+        if shift, let anchor = selectionAnchor, let from = visible.firstIndex(where: { $0.id == anchor }), let to = visible.firstIndex(where: { $0.id == item.id }) {
+            let range = visible[min(from, to)...max(from, to)].map(\.id)
+            selection = command ? selection.union(range) : Set(range)
+            return
+        }
+        if command {
+            if selection.contains(item.id) { selection.remove(item.id) } else { selection.insert(item.id) }
+        } else { selection = [item.id] }
+        selectionAnchor = item.id
+    }
+    func pin(_ item: ShelfItem) { Task { do { items = try await repository?.pin(item.id) ?? stored } catch { self.error = error.localizedDescription } } }
     func chooseFiles(onFinish: @escaping () -> Void = {}) {
         let panel = NSOpenPanel(); panel.allowsMultipleSelection = true; panel.canChooseDirectories = true; panel.prompt = L("Ajouter au dépôt")
         panel.begin { [weak self] result in Task { @MainActor in if result == .OK { self?.add(panel.urls) }; onFinish() } }

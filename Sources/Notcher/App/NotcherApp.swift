@@ -40,7 +40,7 @@ import UserNotifications
         }
         do { try AppPaths.prepare() }
         catch { fputs("Notcher : \(error.localizedDescription)\n", stderr); return }
-        let preview = args.contains("--preview") || args.contains("--render-previews")
+        let preview = args.contains("--preview") || args.contains("--render-previews") || args.contains("--record-demo")
         // Two instances would stack two panels on the notch and write the same files.
         if !preview, let identifier = Bundle.main.bundleIdentifier {
             let running = NSRunningApplication.runningApplications(withBundleIdentifier: identifier)
@@ -70,17 +70,23 @@ import UserNotifications
     private var previewWindow: NSWindow?
     private var hotKey: EventHotKeyRef?
     private var hotKeyHandler: EventHandlerRef?
+    private var toggleItem: NSMenuItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         UNUserNotificationCenter.current().delegate = self
         model.openSettings = { [weak self] in self?.showSettings() }
         let args = CommandLine.arguments
+        if let index = args.firstIndex(of: "--record-demo") {
+            DemoRecorder.run(output: args.indices.contains(index + 1) ? args[index + 1] : "demo.mp4")
+            return
+        }
         if args.contains("--preview") || args.contains("--render-previews") {
             showPreview(render: args.contains("--render-previews"))
             return
         }
         controller = NotchController(model: model)
         model.openPanel = { [weak self] in self?.controller?.toggle() }
+        model.onHotKeyChange = { [weak self] combo, suspended in self?.registerHotKey(combo, suspended: suspended) }
         model.start()
         controller?.show()
         buildMenu(); registerHotKey()
@@ -88,6 +94,23 @@ import UserNotifications
             model.preferences.defaults.set(true, forKey: "hasLaunched")
             model.expand()
         }
+    }
+    /// Copies removed from the shelf in the last few seconds are deleted before the app goes, or they would
+    /// come back at the next launch. Bounded: a stuck disk never keeps Notcher from quitting.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard model.shelf.hasUnfinishedRemovals else { return .terminateNow }
+        let shelf = model.shelf
+        Task { @MainActor in
+            // Whichever ends first: the deletions, or three seconds.
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask { await shelf.finishRemovals() }
+                group.addTask { try? await Task.sleep(for: .seconds(3)) }
+                await group.next()
+                group.cancelAll()
+            }
+            sender.reply(toApplicationShouldTerminate: true)
+        }
+        return .terminateLater
     }
     func applicationWillTerminate(_ notification: Notification) {
         model.stop(); controller?.stop()
@@ -106,7 +129,8 @@ import UserNotifications
         item.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Notcher")
         let menu = NSMenu()
         let toggle = NSMenuItem(title: L("Ouvrir Notcher"), action: #selector(toggleNotch), keyEquivalent: " ")
-        toggle.keyEquivalentModifierMask = [.command, .shift]; toggle.target = self; menu.addItem(toggle)
+        toggle.target = self; menu.addItem(toggle); toggleItem = toggle
+        updateMenuShortcut(model.preferences.hotKey)
         let settings = NSMenuItem(title: L("Réglages…"), action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
         menu.addItem(.separator())
@@ -127,18 +151,42 @@ import UserNotifications
         window.center(); window.makeKeyAndOrderFront(nil); settingsWindow = window
         NSApp.activate(ignoringOtherApps: true)
     }
-    private func registerHotKey() {
-        var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let context = Unmanaged.passUnretained(self).toOpaque()
-        InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
-            guard let context else { return noErr }
-            let delegate = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
-            DispatchQueue.main.async { delegate.toggleNotch() }
-            return noErr
-        }, 1, &event, context, &hotKeyHandler)
+    /// Registers the chosen shortcut, replacing the previous one. Suspended while the settings record a new one,
+    /// so pressing the current combination reaches the recorder instead of toggling the panel.
+    private func registerHotKey(_ requested: HotKeyCombo? = nil, suspended: Bool = false) {
+        let combo = requested ?? model.preferences.hotKey
+        if hotKeyHandler == nil {
+            var event = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+            let context = Unmanaged.passUnretained(self).toOpaque()
+            InstallEventHandler(GetApplicationEventTarget(), { _, _, context in
+                guard let context else { return noErr }
+                let delegate = Unmanaged<AppDelegate>.fromOpaque(context).takeUnretainedValue()
+                DispatchQueue.main.async { delegate.toggleNotch() }
+                return noErr
+            }, 1, &event, context, &hotKeyHandler)
+        }
+        if let hotKey { UnregisterEventHotKey(hotKey); self.hotKey = nil }
+        updateMenuShortcut(combo)
+        guard !suspended else { return }
         let id = EventHotKeyID(signature: 0x4E544348, id: 1)
-        let result = RegisterEventHotKey(UInt32(kVK_Space), UInt32(cmdKey | shiftKey), id, GetApplicationEventTarget(), 0, &hotKey)
-        if result != noErr { model.notify("⌘⇧Espace est déjà utilisé. Notcher reste accessible dans la barre des menus.") }
+        let result = RegisterEventHotKey(UInt32(combo.keyCode), combo.carbonModifiers, id, GetApplicationEventTarget(), 0, &hotKey)
+        if result == noErr { model.hotKeyProblem = nil; return }
+        hotKey = nil
+        let problem = L("%@ est déjà utilisé par une autre app. Choisis un autre raccourci dans Réglages → Comportement.", combo.display)
+        // Said once in the panel, the next time it opens, and kept in the settings until it is solved.
+        if model.hotKeyProblem != problem { model.notifyWhenOpen(problem) }
+        model.hotKeyProblem = problem
+    }
+    /// The menu shows the shortcut actually in use.
+    private func updateMenuShortcut(_ combo: HotKeyCombo) {
+        guard let toggleItem else { return }
+        toggleItem.keyEquivalent = combo.keyEquivalent
+        var mask: NSEvent.ModifierFlags = []
+        if combo.command { mask.insert(.command) }
+        if combo.option { mask.insert(.option) }
+        if combo.control { mask.insert(.control) }
+        if combo.shift { mask.insert(.shift) }
+        toggleItem.keyEquivalentModifierMask = mask
     }
     private func showPreview(render: Bool) {
         model.expanded = true; model.presentationExpanded = true; model.pinned = true

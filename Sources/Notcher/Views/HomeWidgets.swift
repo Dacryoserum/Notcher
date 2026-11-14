@@ -192,7 +192,7 @@ private struct FilesWidget: View {
                             ForEach(Array(shelf.items.suffix(columns * rows).reversed())) { item in
                                 let url = shelf.url(for: item)
                                 VStack(spacing: 2) {
-                                    Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 26, height: 26)
+                                    FileThumbnail(url: url, side: 26)
                                     if !flat { Text(item.name).font(.system(size: 8)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
                                 }.frame(maxWidth: .infinity).contentShape(Rectangle())
                                     .onTapGesture(count: 2) { NSWorkspace.shared.open(url) }

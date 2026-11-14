@@ -11,6 +11,25 @@ public struct ShelfItem: Codable, Identifiable, Equatable {
     }
 }
 
+/// When a copy leaves the shelf, and how to say it on its card.
+public enum ShelfExpiry {
+    /// Nil when the copy stays: pinned, or kept forever.
+    public static func date(of item: ShelfItem, retentionHours: Int) -> Date? {
+        guard retentionHours > 0, !item.isPinned else { return nil }
+        return item.addedAt.addingTimeInterval(Double(retentionHours) * 3600)
+    }
+    /// "2 j", "5 h", "12 min", rounded up so a card never claims less time than it has.
+    public static func label(remaining: TimeInterval) -> String {
+        let minutes = max(1, Int((remaining / 60).rounded(.up)))
+        if minutes < 60 { return L("%lld min", minutes) }
+        let hours = Int((Double(minutes) / 60).rounded(.up))
+        if hours < 48 { return L("%lld h", hours) }
+        return L("%lld j", Int((Double(hours) / 24).rounded(.up)))
+    }
+    /// Under an hour left: the card warns.
+    public static func isSoon(remaining: TimeInterval) -> Bool { remaining < 3600 }
+}
+
 public enum ShelfError: LocalizedError {
     case tooLarge, unsafePath, missingFile, symbolicLink, containsShelf
     public var errorDescription: String? {
@@ -76,13 +95,18 @@ public final class FileShelfStore {
         }
     }
 
-    public func remove(_ id: UUID) throws {
-        guard items.contains(where: { $0.id == id }) else { return }
-        let next = items.filter { $0.id != id }
+    public func remove(_ id: UUID) throws { try remove([id]) }
+    /// Several copies at once, with a single write of the index.
+    public func remove(_ ids: Set<UUID>) throws {
+        let removed = items.filter { ids.contains($0.id) }
+        guard !removed.isEmpty else { return }
+        let next = items.filter { !ids.contains($0.id) }
         try save(next)
         items = next
-        let ownedDirectory = root.appendingPathComponent(id.uuidString, isDirectory: true)
-        if fm.fileExists(atPath: ownedDirectory.path) { try fm.removeItem(at: ownedDirectory) }
+        for item in removed {
+            let ownedDirectory = root.appendingPathComponent(item.id.uuidString, isDirectory: true)
+            if fm.fileExists(atPath: ownedDirectory.path) { try fm.removeItem(at: ownedDirectory) }
+        }
     }
     public func togglePin(_ id: UUID) throws {
         var next = items

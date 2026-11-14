@@ -40,9 +40,19 @@ struct NotchView: View {
         .clipShape(NotchShape())
         .overlay(alignment: .bottom) {
             if model.expanded, let toast = model.toast {
-                Text(L(toast)).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center).padding(.horizontal, 12).padding(.vertical, 7)
-                    .background(Theme.raised, in: Capsule()).padding(.bottom, 8).padding(.horizontal, 40).allowsHitTesting(false)
-                    .transition(.opacity.combined(with: .offset(y: 6)))
+                HStack(spacing: 10) {
+                    Text(L(toast)).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center)
+                    if let action = model.toastAction {
+                        Button { action.run() } label: {
+                            Text(L(action.title)).font(.system(size: 10, weight: .semibold)).foregroundStyle(model.preferences.accentColor)
+                                .padding(.horizontal, 4).frame(height: 18).contentShape(Rectangle())
+                        }.buttonStyle(PressStyle(scale: 0.92)).help(L("%@ · ⌘Z", L(action.title)))
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(Theme.raised, in: Capsule()).padding(.bottom, 8).padding(.horizontal, 40)
+                .allowsHitTesting(model.toastAction != nil)
+                .transition(.opacity.combined(with: .offset(y: 6)))
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.toast)

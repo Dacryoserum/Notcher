@@ -50,6 +50,10 @@ struct NotchActivity: Equatable {
     var markColor: Color? = nil
     var pictureOnly: Bool { title.isEmpty }
 }
+struct ToastAction {
+    let title: String
+    let run: () -> Void
+}
 /// A state shown in the closed notch for as long as it lasts: Claude answering, a meeting coming up…
 struct NotchAmbient: Equatable {
     enum Motion { case none, breathing, pulsing }
@@ -63,7 +67,10 @@ struct NotchAmbient: Equatable {
 }
 
 @MainActor final class AppModel: ObservableObject {
-    let preferences = Preferences()
+    let preferences: Preferences
+    /// The demo recording passes preferences of its own, so it never reads or writes the user's.
+    init(preferences: Preferences) { self.preferences = preferences }
+    convenience init() { self.init(preferences: Preferences()) }
     let media = MediaService()
     let system = SystemService()
     let shelf = ShelfService()
@@ -88,10 +95,24 @@ struct NotchAmbient: Equatable {
     @Published private(set) var ambient: NotchAmbient?
     private var ambientTimer: Timer?
     @Published var toast: String?
+    /// A button inside the toast, such as "Annuler" after a removal.
+    @Published private(set) var toastAction: ToastAction?
+    /// A message raised while the panel was closed, shown the next time it opens.
+    private var deferredNotice: String?
+    /// Why the global shortcut does not work, shown in the settings; nil when it is registered.
+    @Published var hotKeyProblem: String?
+    /// Set by the app delegate: registers this shortcut, or none while the settings record a new one.
+    var onHotKeyChange: ((_ combo: HotKeyCombo, _ suspended: Bool) -> Void)?
     @Published var notchWidth: CGFloat = 190
     @Published var notchHeight: CGFloat = 32
     @Published var dragging = false
-    @Published var dialogOpen = false
+    /// One token per system window opened from the panel (open and save panels, Quick Look, a confirmation).
+    /// Each closes only its own, so a window that closes cannot release the panel held by another.
+    @Published private(set) var openDialogs: Set<UUID> = []
+    var dialogOpen: Bool { !openDialogs.isEmpty }
+    func beginDialog() -> UUID { let token = UUID(); openDialogs.insert(token); return token }
+    func endDialog(_ token: UUID) { openDialogs.remove(token) }
+    func endAllDialogs() { if !openDialogs.isEmpty { openDialogs = [] } }
     /// Pointer resting on the closed notch in "hover then click" mode.
     @Published var hovering = false
     private var announcedTrack: NowPlaying.ArtworkKey?
@@ -153,6 +174,8 @@ struct NotchAmbient: Equatable {
         $hovering.dropFirst().removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         focus.onFinished = { [weak self] in self?.showActivity(.init(symbol: "checkmark.circle.fill", title: "Pomodoro terminé"), seconds: 10) }
         shelf.onAdded = { [weak self] count in self?.notify(L(count > 1 ? "%lld éléments ajoutés au dépôt" : "%lld élément ajouté au dépôt", count)) }
+        // @Published sends before the property changes: register the value received, not the property.
+        preferences.$hotKey.dropFirst().removeDuplicates().sink { [weak self] combo in self?.onHotKeyChange?(combo, false) }.store(in: &subscriptions)
         preferences.$haptics.sink { value in MainActor.assumeIsolated { Haptics.enabled = value } }.store(in: &subscriptions)
         preferences.$compactStyle.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         preferences.$hiddenTabs.sink { [weak self] hidden in
@@ -166,7 +189,7 @@ struct NotchAmbient: Equatable {
         preferences.$retentionHours.dropFirst().sink { [weak self] value in self?.shelf.purge(hours: value) }.store(in: &subscriptions)
         preferences.$clipboardEnabled.dropFirst().sink { [weak self] value in if !value { self?.clipboard.clear() } }.store(in: &subscriptions)
         $expanded.dropFirst().removeDuplicates().sink { [weak self] value in
-            if !value { self?.camera.stop(); self?.bluetooth.cancel() }
+            if !value { self?.camera.stop(); self?.bluetooth.cancel(); self?.shelf.selection = [] }
             self?.media.attentive = value
             self?.onGeometryChange?()
         }.store(in: &subscriptions)
@@ -203,6 +226,7 @@ struct NotchAmbient: Equatable {
         hovering = false
         expanded = true
         Haptics.play(.levelChange)
+        if let notice = deferredNotice { deferredNotice = nil; notify(notice) }
     }
     func collapse() {
         guard !dialogOpen, expanded else { return }
@@ -274,8 +298,59 @@ struct NotchAmbient: Equatable {
         activityTask?.cancel(); activity = value
         activityTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(seconds)); self?.activity = nil } catch {} }
     }
-    func notify(_ value: String) {
-        toastTask?.cancel(); toast = value
-        toastTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(3)); self?.toast = nil } catch {} }
+    func notify(_ value: String, action: ToastAction? = nil) {
+        toastTask?.cancel(); toast = value; toastAction = action
+        let seconds = action == nil ? 3 : ShelfService.undoWindow
+        toastTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(seconds)); self?.toast = nil; self?.toastAction = nil } catch {} }
+    }
+    /// Shown now if the panel is open, otherwise as soon as it opens: a toast on a closed panel is never seen.
+    func notifyWhenOpen(_ value: String) {
+        if expanded { notify(value) } else { deferredNotice = value }
+    }
+    func dismissToast() { toastTask?.cancel(); toast = nil; toastAction = nil }
+
+    // MARK: Shelf
+
+    /// Removes copies from the shelf, with a moment to take it back.
+    func removeFromShelf(_ ids: Set<UUID>) {
+        let count = shelf.remove(ids)
+        guard count > 0 else { return }
+        Haptics.play(.alignment)
+        notify(L(count > 1 ? "%lld fichiers retirés" : "%lld fichier retiré", count), action: ToastAction(title: "Annuler le retrait") { [weak self] in self?.undoShelfRemoval() })
+    }
+    func undoShelfRemoval() {
+        guard shelf.canUndo else { return }
+        shelf.undoRemoval(); dismissToast(); Haptics.play(.levelChange)
+    }
+    /// Space bar on the shelf: shows the selection in Quick Look, or closes it.
+    func toggleShelfPreview() {
+        if FilePreview.shared.isVisible { FilePreview.shared.close(); return }
+        let chosen = shelf.selected()
+        let items = chosen.isEmpty ? Array(shelf.items.prefix(1)) : chosen
+        guard !items.isEmpty else { return }
+        preview(items.map(shelf.url(for:)))
+    }
+    func preview(_ urls: [URL]) {
+        let token = beginDialog()
+        FilePreview.shared.show(urls) { [weak self] in self?.endDialog(token) }
+    }
+    /// Keys of the shelf while its tab is shown. Returns true when the key was used.
+    func handleShelfKey(keyCode: UInt16, characters: String?, command: Bool) -> Bool {
+        guard tab == .files else { return false }
+        switch (keyCode, command) {
+        case (49, false): toggleShelfPreview(); return true
+        case (51, _), (117, _):
+            guard !shelf.selection.isEmpty else { return false }
+            removeFromShelf(shelf.selection); return true
+        case (_, true) where characters == "a":
+            shelf.selection = Set(shelf.visible.map(\.id)); return true
+        case (_, true) where characters == "z":
+            guard shelf.canUndo else { return false }
+            undoShelfRemoval(); return true
+        case (53, false):
+            guard !shelf.selection.isEmpty else { return false }
+            shelf.selection = []; return true
+        default: return false
+        }
     }
 }

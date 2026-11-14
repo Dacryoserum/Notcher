@@ -7,6 +7,7 @@ struct NotesView: View {
     @ObservedObject var model: AppModel
     @ObservedObject var notes: NotesService
     @State private var confirmDelete = false
+    @State private var confirmToken: UUID?
     @State private var undoText: [UUID: String] = [:]
     /// 0 at rest; ±1 while the newly chosen sheet is still arriving from below or above.
     @State private var arrival: CGFloat = 0
@@ -18,7 +19,7 @@ struct NotesView: View {
                     .textFieldStyle(.plain).font(.system(size: 15, weight: .medium))
                 Spacer()
                 IconButton(symbol: "square.and.arrow.up.on.square", help: "Envoyer vers Notes", tint: notes.sending ? accent : .secondary) { model.sendSelectedNoteToNotes() }.disabled(notes.sending)
-                IconButton(symbol: "square.and.arrow.up", help: "Exporter la fiche") { model.dialogOpen = true; notes.export { model.dialogOpen = false } }
+                IconButton(symbol: "square.and.arrow.up", help: "Exporter la fiche") { let token = model.beginDialog(); notes.export { model.endDialog(token) } }
                 IconButton(symbol: "trash", help: "Supprimer la fiche") { confirmDelete = true }
             }
             HStack(spacing: 10) {
@@ -53,7 +54,9 @@ struct NotesView: View {
             }
             ErrorLine(message: notes.error)
         }
-        .onChange(of: confirmDelete) { _, value in model.dialogOpen = value }
+        .onChange(of: confirmDelete) { _, value in
+            if value { confirmToken = model.beginDialog() } else if let token = confirmToken { model.endDialog(token); confirmToken = nil }
+        }
         .onChange(of: notes.selectedID) { old, new in
             guard !reduceMotion, let new, old != new else { return }
             let from = notes.notes.firstIndex { $0.id == old } ?? 0, to = notes.notes.firstIndex { $0.id == new } ?? 0

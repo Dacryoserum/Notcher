@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 import NotcherCore
 import QuartzCore
+import os
 
 final class NotchPanel: NSPanel {
     override var canBecomeKey: Bool { true }
@@ -100,7 +101,7 @@ private final class NotchContainer: NSView {
         // Nothing should ever leave the panel out of step with its state; if something does, this repairs it.
         auditTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in Task { @MainActor in self?.audit() } }
         auditTimer?.tolerance = 0.3
-        model.$dialogOpen.dropFirst().sink { [weak self] open in if !open { self?.scheduleClose() } }.store(in: &subscriptions)
+        model.$openDialogs.map(\.isEmpty).removeDuplicates().dropFirst().sink { [weak self] none in if none { self?.scheduleClose() } }.store(in: &subscriptions)
         model.$pinned.dropFirst().sink { [weak self] pinned in if !pinned { self?.scheduleClose() } }.store(in: &subscriptions)
         observer = NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.reassert() } }
         // After sleep or a Space change the system may reorder or move a borderless panel.
@@ -123,6 +124,17 @@ private final class NotchContainer: NSView {
             // Open on the press itself: no gesture recogniser, no dependence on which window has the focus.
             if event.type == .leftMouseDown, !self.model.expanded, self.isOnNotch(NSEvent.mouseLocation) {
                 self.hoverTask?.cancel(); self.hoverTask = nil; self.model.expand(); self.lastInside = true
+                return nil
+            }
+            // Quick Look opened from the shelf: the space bar closes it again, from either window.
+            if event.type == .keyDown, event.keyCode == 49, FilePreview.shared.isVisible,
+               FilePreview.shared.owns(event.window) || (event.window === self.panel && !(self.panel.firstResponder is NSText)) {
+                FilePreview.shared.close(); return nil
+            }
+            // The shelf's own keys (space, delete, ⌘A, ⌘Z), unless a text field has the keyboard.
+            if event.type == .keyDown, self.panel.isKeyWindow, self.model.expanded, !(self.panel.firstResponder is NSText),
+               event.modifierFlags.intersection([.command, .control, .option]).subtracting(.command).isEmpty,
+               self.model.handleShelfKey(keyCode: event.keyCode, characters: event.charactersIgnoringModifiers?.lowercased(), command: event.modifierFlags.contains(.command)) {
                 return nil
             }
             if event.type == .keyDown && event.keyCode == 53 && self.panel.isKeyWindow { self.forceCollapse(); return nil }
@@ -211,7 +223,8 @@ private final class NotchContainer: NSView {
     func forceCollapse() {
         hoverTask?.cancel(); hoverTask = nil; closeTask?.cancel()
         if let sheet = panel.attachedSheet { panel.endSheet(sheet) }
-        model.dialogOpen = false; model.dragging = false
+        if FilePreview.shared.isVisible { FilePreview.shared.close() }
+        model.endAllDialogs(); model.dragging = false
         model.collapse()
         if model.expanded { model.expanded = false; model.pinned = false }
         updateGeometry()
@@ -224,18 +237,31 @@ private final class NotchContainer: NSView {
     }
     /// Once a second, when nothing is animating: the drawn state must match the model, and a flag that
     /// keeps the panel open must correspond to something really on screen.
+    /// Every repair the audit makes is a state that went out of step: logged, so it can be found and fixed
+    /// (Console, subsystem fr.notcher.app) instead of being silently papered over.
+    private static let log = Logger(subsystem: "fr.notcher.app", category: "panel")
     private func audit() {
         if model.dialogOpen {
-            let visible = panel.attachedSheet != nil || NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && ($0 is NSSavePanel || $0.sheetParent === panel) }
+            let visible = panel.attachedSheet != nil || NSApp.modalWindow != nil || FilePreview.shared.isVisible || NSApp.windows.contains { $0.isVisible && ($0 is NSSavePanel || $0.sheetParent === panel) }
             staleDialog = visible ? 0 : staleDialog + 1
-            if staleDialog >= 3 { model.dialogOpen = false; staleDialog = 0 }
+            if staleDialog >= 3 {
+                Self.log.error("Repaired: \(self.model.openDialogs.count, privacy: .public) dialog token(s) left open with no window on screen")
+                model.endAllDialogs(); staleDialog = 0
+            }
         } else { staleDialog = 0 }
         if model.dragging && !isOnNotch(NSEvent.mouseLocation) {
             staleDrag += 1
-            if staleDrag >= 3 { model.dragging = false; staleDrag = 0 }
+            if staleDrag >= 3 {
+                // SwiftUI sometimes misses the exit of a drag that leaves the drop zone quickly.
+                Self.log.notice("Repaired: drag state left on after the pointer left the notch")
+                model.dragging = false; staleDrag = 0
+            }
         } else { staleDrag = 0 }
         guard settleTask == nil, !geometryQueued, !contextMenuOpen else { return }
-        if model.presentationExpanded != model.expanded || model.shapeSize != model.targetSize { updateGeometry(animated: false) }
+        if model.presentationExpanded != model.expanded || model.shapeSize != model.targetSize {
+            Self.log.error("Repaired: drawn panel out of step with its state (expanded \(self.model.expanded, privacy: .public))")
+            updateGeometry(animated: false)
+        }
         else { place(model.shapeSize) }
         if !panel.isVisible { panel.orderFrontRegardless() }
     }

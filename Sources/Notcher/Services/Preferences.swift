@@ -24,6 +24,8 @@ import NotcherCore
     @Published var compactStyle: CompactStyle { didSet { defaults.set(compactStyle.rawValue, forKey: "compactStyle") } }
     /// Stable tab keys, never display names: a renamed tab must not reappear.
     @Published var hiddenTabs: Set<String> { didSet { defaults.set(hiddenTabs.sorted(), forKey: "hiddenTabs") } }
+    /// Global shortcut that opens or closes the panel.
+    @Published var hotKey: HotKeyCombo { didSet { defaults.set(hotKey.encoded, forKey: "hotKey") } }
     @Published var launchAtLogin = SMAppService.mainApp.status == .enabled
     /// "system", "fr" or "en". Stored as the standard AppleLanguages override; applies at next launch.
     @Published var language: String {
@@ -56,6 +58,7 @@ import NotcherCore
         closeDelay = CloseDelay(rawValue: defaults.string(forKey: "closeDelay") ?? "") ?? .normal
         compactStyle = CompactStyle(rawValue: defaults.string(forKey: "compactStyle") ?? "") ?? .minimal
         hiddenTabs = Set(defaults.stringArray(forKey: "hiddenTabs") ?? [])
+        hotKey = HotKeyCombo.restore(defaults.data(forKey: "hotKey"))
     }
     var accentColor: Color {
         let color = AccentColor(hex: accentHex) ?? .default

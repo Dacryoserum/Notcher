@@ -120,6 +120,10 @@ struct MediaClient: Sendable {
         if let spotifyObserver { DistributedNotificationCenter.default().removeObserver(spotifyObserver) }; spotifyObserver = nil
         setEnabled(false)
     }
+    /// Demo recording only (--record-demo): shows a track without asking any player.
+    func showDemo(_ value: NowPlaying?, artwork image: NSImage?) {
+        track = value; artwork = image; sampledAt = now(); updateRest()
+    }
     func setEnabled(_ value: Bool) {
         guard enabled != value else { return }
         generation = UUID(); revision += 1; enabled = value

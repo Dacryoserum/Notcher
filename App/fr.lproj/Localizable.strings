@@ -350,3 +350,27 @@
 "La clé de vérification des mises à jour est invalide." = "La clé de vérification des mises à jour est invalide.";
 "La mise à jour est anormalement volumineuse." = "La mise à jour est anormalement volumineuse.";
 "L’adresse de la mise à jour n’est pas sûre." = "L’adresse de la mise à jour n’est pas sûre.";
+
+/* Dépôt : sélection, retrait annulable ; raccourci personnalisable. */
+"%lld sélectionnés" = "%lld sélectionnés";
+"%lld sélectionné" = "%lld sélectionné";
+"Aperçu · Espace" = "Aperçu · Espace";
+"Envoyer par AirDrop" = "Envoyer par AirDrop";
+"Retirer la sélection · ⌫" = "Retirer la sélection · ⌫";
+"Vider le dépôt (les fichiers épinglés restent)" = "Vider le dépôt (les fichiers épinglés restent)";
+"Espace pour l’aperçu · Glisser pour exporter · Double-clic pour ouvrir" = "Espace pour l’aperçu · Glisser pour exporter · Double-clic pour ouvrir";
+"Retiré automatiquement %@. Épingle-le pour le garder." = "Retiré automatiquement %@. Épingle-le pour le garder.";
+"%lld fichiers retirés" = "%lld fichiers retirés";
+"%lld fichier retiré" = "%lld fichier retiré";
+"%@ · ⌘Z" = "%@ · ⌘Z";
+"%@ est déjà utilisé par une autre app. Choisis un autre raccourci dans Réglages → Comportement." = "%@ est déjà utilisé par une autre app. Choisis un autre raccourci dans Réglages → Comportement.";
+"Ouvre ou referme le panneau depuis n’importe quelle app. Clique sur les touches pour en choisir d’autres." = "Ouvre ou referme le panneau depuis n’importe quelle app. Clique sur les touches pour en choisir d’autres.";
+"Ajoute ⌘, ⌥ ou ⌃" = "Ajoute ⌘, ⌥ ou ⌃";
+"Tape le raccourci…" = "Tape le raccourci…";
+"Échap pour annuler" = "Échap pour annuler";
+"Cliquer pour changer le raccourci" = "Cliquer pour changer le raccourci";
+"Revenir à ⌘⇧Espace" = "Revenir à ⌘⇧Espace";
+"%lld h" = "%lld h";
+"%lld j" = "%lld j";
+"Annuler le retrait" = "Annuler";
+"%@ est réservé à macOS ou aux apps" = "%@ est réservé à macOS ou aux apps";

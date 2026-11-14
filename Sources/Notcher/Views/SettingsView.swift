@@ -38,7 +38,7 @@ struct SettingsView: View {
                     switch pane {
                     case .look: AppearancePane(preferences: preferences)
                     case .widgets: WidgetsPane(preferences: preferences)
-                    case .behavior: BehaviorPane(preferences: preferences, updates: updates, error: $error)
+                    case .behavior: BehaviorPane(model: model, preferences: preferences, updates: updates, error: $error)
                     case .services: ServicesPane(preferences: preferences, agents: agents, error: $error)
                     }
                 }.padding(.horizontal, 28).padding(.vertical, 22)
@@ -509,6 +509,8 @@ private struct SettingRow<Control: View>: View {
     let symbol: String
     let title: String
     var subtitle: String? = nil
+    /// The subtitle reports a problem.
+    var warning = false
     var divider = true
     @ViewBuilder var control: Control
     var body: some View {
@@ -518,7 +520,7 @@ private struct SettingRow<Control: View>: View {
                     .frame(width: 30, height: 30).background(accent.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
                 VStack(alignment: .leading, spacing: 3) {
                     Text(L(title)).font(.system(size: 13, weight: .medium))
-                    if let subtitle { Text(L(subtitle)).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true) }
+                    if let subtitle { Text(L(subtitle)).font(.system(size: 11)).foregroundStyle(warning ? Theme.orange : .secondary).fixedSize(horizontal: false, vertical: true) }
                 }
                 Spacer(minLength: 14)
                 control
@@ -534,6 +536,7 @@ private struct Switch: View {
 }
 
 private struct BehaviorPane: View {
+    @ObservedObject var model: AppModel
     @ObservedObject var preferences: Preferences
     @ObservedObject var updates: UpdateService
     @Binding var error: String?
@@ -553,13 +556,9 @@ private struct BehaviorPane: View {
                             ForEach(CloseDelay.allCases) { Text($0.title).tag($0) }
                         }.pickerStyle(.segmented).labelsHidden().frame(width: 230)
                     }
-                    SettingRow(symbol: "keyboard", title: "Raccourci clavier", subtitle: "Ouvre ou referme le panneau depuis n’importe quelle app.", divider: false) {
-                        HStack(spacing: 4) {
-                            ForEach(["⌘", "⇧", "Espace"], id: \.self) { key in
-                                Text(L(key)).font(.system(size: 11, weight: .medium)).padding(.horizontal, 8).frame(height: 24)
-                                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border))
-                            }
-                        }
+                    SettingRow(symbol: "keyboard", title: "Raccourci clavier", subtitle: model.hotKeyProblem ?? "Ouvre ou referme le panneau depuis n’importe quelle app. Clique sur les touches pour en choisir d’autres.",
+                               warning: model.hotKeyProblem != nil, divider: false) {
+                        HotKeyRecorder(model: model, preferences: preferences)
                     }
                 }
             }
@@ -620,6 +619,68 @@ private struct BehaviorPane: View {
             guard let id = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue, id != 0, seen.insert(id).inserted else { return nil }
             return (id, screen.localizedName)
         }
+    }
+}
+
+/// Shows the shortcut as key caps; a click listens for the next combination typed.
+private struct HotKeyRecorder: View {
+    @Environment(\.notcherAccent) private var accent
+    @ObservedObject var model: AppModel
+    @ObservedObject var preferences: Preferences
+    @State private var recording = false
+    @State private var monitor: Any?
+    /// Why the last combination typed was refused.
+    @State private var refusal: String?
+    var body: some View {
+        HStack(spacing: 6) {
+            Button { recording ? stop() : start() } label: {
+                HStack(spacing: 4) {
+                    if recording {
+                        Text(L(refusal ?? "Tape le raccourci…")).font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(refusal != nil ? Theme.orange : accent).padding(.horizontal, 10).frame(height: 24)
+                    } else {
+                        ForEach(Array(preferences.hotKey.caps.enumerated()), id: \.offset) { _, cap in
+                            Text(verbatim: cap).font(.system(size: 11, weight: .medium)).padding(.horizontal, 8).frame(height: 24)
+                                .background(Theme.raised, in: RoundedRectangle(cornerRadius: 6)).overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.border))
+                        }
+                    }
+                }
+                .padding(2)
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(recording ? accent.opacity(0.8) : .clear, lineWidth: 1.5))
+                .contentShape(Rectangle())
+            }.buttonStyle(PressStyle(scale: 0.97))
+                .help(L(recording ? "Échap pour annuler" : "Cliquer pour changer le raccourci"))
+                .accessibilityLabel(L("Raccourci clavier")).accessibilityValue(preferences.hotKey.display)
+            if !recording && preferences.hotKey != .standard {
+                IconButton(symbol: "arrow.counterclockwise", help: "Revenir à ⌘⇧Espace", size: 26) { preferences.hotKey = .standard }
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: recording)
+        .onDisappear { if recording { stop() } }
+    }
+    private func start() {
+        recording = true; refusal = nil
+        model.onHotKeyChange?(preferences.hotKey, true)
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            if event.keyCode == 53, flags.intersection([.command, .option, .control, .shift]).isEmpty { stop(); return nil }
+            let typed = (event.charactersIgnoringModifiers ?? "").trimmingCharacters(in: .whitespacesAndNewlines.union(.controlCharacters)).uppercased()
+            let key = HotKeyCombo.name(forKeyCode: event.keyCode) ?? typed
+            guard !key.isEmpty else { NSSound.beep(); return nil }
+            let combo = HotKeyCombo(keyCode: event.keyCode, command: flags.contains(.command), option: flags.contains(.option),
+                                    control: flags.contains(.control), shift: flags.contains(.shift), key: key)
+            guard combo.isUsable else { refusal = "Ajoute ⌘, ⌥ ou ⌃"; NSSound.beep(); return nil }
+            guard !combo.isReserved else { refusal = L("%@ est réservé à macOS ou aux apps", combo.display); NSSound.beep(); return nil }
+            preferences.hotKey = combo
+            Haptics.play(.levelChange)
+            stop()
+            return nil
+        }
+    }
+    private func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil; recording = false; refusal = nil
+        model.onHotKeyChange?(preferences.hotKey, false)
     }
 }
 

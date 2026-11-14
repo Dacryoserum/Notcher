@@ -310,9 +310,9 @@ struct ConverterView: View {
         }
     }
     private func choose() {
-        model.dialogOpen = true
+        let token = model.beginDialog()
         let panel = NSOpenPanel(); panel.allowedContentTypes = [.image]; panel.canChooseDirectories = false
-        panel.begin { response in model.dialogOpen = false; if response == .OK { source = panel.url; error = nil } }
+        panel.begin { response in model.endDialog(token); if response == .OK { source = panel.url; error = nil } }
     }
     private func convert() {
         guard let source else { return }

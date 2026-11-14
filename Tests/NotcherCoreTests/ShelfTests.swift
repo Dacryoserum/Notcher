@@ -14,6 +14,14 @@ final class ShelfTests: XCTestCase {
     }
     private func store(capacity: Int64 = 10000) throws -> FileShelfStore { try FileShelfStore(root: directory.appendingPathComponent("shelf"), capacity: capacity) }
 
+    func testRemovingSeveralCopiesWritesTheIndexOnce() throws {
+        let repository = try store()
+        let items = try (0..<3).map { try repository.add(try source("f\($0).txt")) }
+        try repository.remove(Set([items[0].id, items[2].id]))
+        XCTAssertEqual(repository.items.map(\.id), [items[1].id])
+        XCTAssertFalse(FileManager.default.fileExists(atPath: try repository.fileURL(for: items[0]).path))
+        XCTAssertEqual(try store().items.map(\.id), [items[1].id], "The index on disk matches")
+    }
     func testImportCopiesAndRemovalNeverDeletesOriginal() throws {
         let original = try source(), repository = try store()
         let item = try repository.add(original)
