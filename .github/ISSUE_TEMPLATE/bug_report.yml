@@ -1,0 +1,40 @@
+name: Bug report
+description: Something in Notcher does not work as it should.
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what Notcher did instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the panel
+        2. …
+  - type: input
+    id: version
+    attributes:
+      label: Notcher version
+      description: Shown in Settings, top right, and in the menu bar menu.
+      placeholder: "1.2.0"
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: "macOS 15.1, MacBook Pro 14-inch M3"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Screenshots or logs
+      description: |
+        A screenshot or a screen recording helps a lot. Panel state repairs are logged in Console.app
+        (filter on subsystem `fr.notcher.app`).
