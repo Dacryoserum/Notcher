@@ -108,7 +108,7 @@ private final class NotchContainer: NSView {
             workspaceObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in Task { @MainActor in self?.reassert() } })
         }
         let events: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .leftMouseDown, .rightMouseDown]
-        if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: { [weak self] event in Task { @MainActor in self?.mouse(event) } }) { monitors.append(global) }
+        if let global = NSEvent.addGlobalMonitorForEvents(matching: events, handler: { [weak self] event in Task { @MainActor in self?.outsideMouse(event) } }) { monitors.append(global) }
         if let local = NSEvent.addLocalMonitorForEvents(matching: events.union(.keyDown), handler: { [weak self] event in
             guard let self, !self.contextMenuOpen else { return event }
             if event.window === self.panel && (event.type == .rightMouseDown || (event.type == .leftMouseDown && event.modifierFlags.contains(.control))) {
@@ -238,6 +238,15 @@ private final class NotchContainer: NSView {
         if model.presentationExpanded != model.expanded || model.shapeSize != model.targetSize { updateGeometry(animated: false) }
         else { place(model.shapeSize) }
         if !panel.isVisible { panel.orderFrontRegardless() }
+    }
+    /// Events macOS delivered to another app. On the top row of pixels the menu bar owns the pointer, even
+    /// over this panel: a press there never reaches the local monitor, so it has to open the notch from here.
+    private func outsideMouse(_ event: NSEvent) {
+        if event.type == .leftMouseDown, !contextMenuOpen, !model.expanded, isOnNotch(NSEvent.mouseLocation) {
+            hoverTask?.cancel(); hoverTask = nil; model.expand(); lastInside = true
+            return
+        }
+        mouse(event)
     }
     private func mouse(_ event: NSEvent) {
         pointerMoved(click: event.type == .leftMouseDown, drag: event.type == .leftMouseDragged && event.window !== panel)

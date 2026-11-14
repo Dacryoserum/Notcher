@@ -303,7 +303,7 @@
 "Vitesse" = "Vitesse";
 "Vive" = "Vive";
 "Volume indisponible" = "Volume indisponible";
-"Volume à chaque appui, batterie au branchement du chargeur, écouteurs à leur connexion." = "Volume à chaque appui, batterie au branchement du chargeur, écouteurs à leur connexion.";
+"Volume, chargeur, écouteurs, réponses de Claude Code, téléchargements terminés, prochain rendez-vous." = "Volume, chargeur, écouteurs, réponses de Claude Code, téléchargements terminés, prochain rendez-vous.";
 "« %@ » devient « %@ »" = "« %@ » devient « %@ »";
 "« Complet » se compose dans l’onglet Widgets" = "« Complet » se compose dans l’onglet Widgets";
 "À actualiser" = "À actualiser";
@@ -317,3 +317,36 @@
 "Éveil" = "Éveil";
 "Événement" = "Événement";
 "⌘⇧Espace est déjà utilisé. Notcher reste accessible dans la barre des menus." = "⌘⇧Espace est déjà utilisé. Notcher reste accessible dans la barre des menus.";
+
+/* Mises à jour */
+"Mise à jour disponible : Notcher %@" = "Mise à jour disponible : Notcher %@";
+"Notcher %@ est disponible" = "Notcher %@ est disponible";
+"Version installée : %@" = "Version installée : %@";
+"En cours…" = "En cours…";
+"Mettre à jour" = "Mettre à jour";
+"Notcher se fermera et se rouvrira tout seul, déjà à jour." = "Notcher se fermera et se rouvrira tout seul, déjà à jour.";
+"Mises à jour" = "Mises à jour";
+"Notcher regarde une fois par jour si une nouvelle version est parue sur GitHub." = "Notcher regarde une fois par jour si une nouvelle version est parue sur GitHub.";
+"Recherche…" = "Recherche…";
+"Rechercher" = "Rechercher";
+"Les mises à jour ne sont pas configurées dans cette copie." = "Les mises à jour ne sont pas configurées dans cette copie.";
+"La version %@ est disponible." = "La version %@ est disponible.";
+"Notcher est à jour." = "Notcher est à jour.";
+"Impossible de joindre GitHub. Nouvel essai plus tard." = "Impossible de joindre GitHub. Nouvel essai plus tard.";
+"Impossible de joindre GitHub." = "Impossible de joindre GitHub.";
+"Téléchargement…" = "Téléchargement…";
+"Vérification de la signature…" = "Vérification de la signature…";
+"Installation…" = "Installation…";
+"Redémarrage…" = "Redémarrage…";
+"Échec de la mise à jour : %@" = "Échec de la mise à jour : %@";
+"Déplace Notcher dans le dossier Applications pour pouvoir le mettre à jour." = "Déplace Notcher dans le dossier Applications pour pouvoir le mettre à jour.";
+"Cette copie de développement ne se met pas à jour toute seule." = "Cette copie de développement ne se met pas à jour toute seule.";
+"Notcher ne peut pas écrire dans le dossier où il est installé." = "Notcher ne peut pas écrire dans le dossier où il est installé.";
+"L’archive de mise à jour ne contient pas l’application." = "L’archive de mise à jour ne contient pas l’application.";
+"L’archive de mise à jour ne correspond pas à la version annoncée." = "L’archive de mise à jour ne correspond pas à la version annoncée.";
+"L’installation de la mise à jour a échoué." = "L’installation de la mise à jour a échoué.";
+"L’empreinte SHA-256 de la mise à jour ne correspond pas." = "L’empreinte SHA-256 de la mise à jour ne correspond pas.";
+"La signature de la mise à jour est invalide." = "La signature de la mise à jour est invalide.";
+"La clé de vérification des mises à jour est invalide." = "La clé de vérification des mises à jour est invalide.";
+"La mise à jour est anormalement volumineuse." = "La mise à jour est anormalement volumineuse.";
+"L’adresse de la mise à jour n’est pas sûre." = "L’adresse de la mise à jour n’est pas sûre.";

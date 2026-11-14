@@ -122,23 +122,51 @@ import NotcherCore
     private var lastClaudeDate: Date?
     private var lastCodexRead = Date.distantPast
     var onLimit: ((String) -> Void)?
+    /// Claude Code sessions answering right now, and those stopped on a question or a permission.
+    @Published private(set) var claudeWorking = 0
+    @Published private(set) var claudeWaiting = 0
+    /// When the last question was sent: the notch only shows that Claude is answering for a moment after it.
+    @Published private(set) var claudePromptAt: Date?
+    var onClaudeFinished: (() -> Void)?
+    private var sessions = ClaudeSessions()
+    private var claudeObserver: NSObjectProtocol?
     private var alerted = Set<String>()
     let preferences: Preferences
     init(preferences: Preferences) { self.preferences = preferences }
     func start() {
         guard timer == nil else { return }
         claudeInstalled = FileManager.default.fileExists(atPath: AppPaths.integrations.appendingPathComponent("claude-install.json").path)
+        // An integration installed by an earlier version only had the status line: add the hooks it lacks.
+        if claudeInstalled { try? ClaudeIntegration.refreshHooks() }
         readClaude()
+        claudeObserver = DistributedNotificationCenter.default().addObserver(forName: ClaudeRelay.name, object: nil, queue: .main) { [weak self] note in
+            guard let event = ClaudeRelay.event(from: note.userInfo) else { return }
+            Task { @MainActor in self?.receive(event) }
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
                 self.readClaude()
+                self.sessions.prune(); self.publishSessions()
                 if self.preferences.codexEnabled && Date().timeIntervalSince(self.lastCodexRead) >= 120 { await self.refreshCodex() }
             }
         }
         timer?.tolerance = 1
     }
-    func stop() { timer?.invalidate(); timer = nil; client.disconnect() }
+    func stop() {
+        timer?.invalidate(); timer = nil; client.disconnect()
+        if let claudeObserver { DistributedNotificationCenter.default().removeObserver(claudeObserver) }; claudeObserver = nil
+    }
+    func receive(_ event: ClaudeEvent, at now: Date = Date()) {
+        let finished = sessions.apply(event, at: now)
+        if event.kind == .prompt { claudePromptAt = now }
+        publishSessions()
+        if finished { onClaudeFinished?() }
+    }
+    private func publishSessions() {
+        if claudeWorking != sessions.working { claudeWorking = sessions.working }
+        if claudeWaiting != sessions.waiting { claudeWaiting = sessions.waiting }
+    }
     func disconnectCodex() { preferences.codexEnabled = false; client.disconnect(); codexStatus = "Déconnecté" }
     func refreshCodex() async {
         guard !refreshing else { return }
@@ -175,6 +203,7 @@ import NotcherCore
     func uninstallClaude() throws {
         try ClaudeIntegration.uninstall()
         claudeInstalled = false; claudeStatus = "Intégration retirée"
+        sessions = ClaudeSessions(); publishSessions()
     }
 }
 
@@ -208,11 +237,67 @@ enum ClaudeIntegration {
             var statusLine = original as? [String: Any] ?? [:]
             statusLine["type"] = "command"; statusLine["command"] = command
             settings["statusLine"] = statusLine
+            try writeHookWrapper(executable: executable)
+            addHooks(to: &settings)
             try fm.createDirectory(at: settingsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
             try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]).write(to: settingsURL, options: .atomic)
         } catch { try? fm.removeItem(at: recordURL); throw error }
     }
+    /// Claude Code events Notcher listens to: an answer starting, moving on, stopping on a question, ending.
+    static let hookEvents = ClaudeEvent.Kind.allCases.map(\.rawValue)
+    static var hookWrapper: URL { AppPaths.integrations.appendingPathComponent("claude-hook.sh") }
+    static var hookCommand: String { "/bin/sh " + shellQuote(hookWrapper.path) }
+    /// The hooks call this script rather than the app, so a moved or deleted app never breaks a Claude session.
+    static func writeHookWrapper(executable: String) throws {
+        let script = "#!/bin/sh\n[ -x \(shellQuote(executable)) ] || exit 0\nexec \(shellQuote(executable)) --claude-event\n"
+        guard (try? String(contentsOf: hookWrapper, encoding: .utf8)) != script else { return }
+        try Data(script.utf8).write(to: hookWrapper, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: hookWrapper.path)
+    }
+    private static func isOurs(_ entry: Any) -> Bool {
+        ((entry as? [String: Any])?["hooks"] as? [[String: Any]])?.contains { $0["command"] as? String == hookCommand } ?? false
+    }
+    /// Adds Notcher's entry next to the user's own hooks; true when something changed.
+    @discardableResult static func addHooks(to settings: inout [String: Any]) -> Bool {
+        guard settings["hooks"] == nil || settings["hooks"] is [String: Any] else { return false }
+        var hooks = settings["hooks"] as? [String: Any] ?? [:]
+        var changed = false
+        for event in hookEvents {
+            guard hooks[event] == nil || hooks[event] is [Any] else { continue }
+            var entries = hooks[event] as? [Any] ?? []
+            guard !entries.contains(where: isOurs) else { continue }
+            entries.append(["hooks": [["type": "command", "command": hookCommand, "timeout": 5] as [String: Any]]])
+            hooks[event] = entries; changed = true
+        }
+        if changed { settings["hooks"] = hooks }
+        return changed
+    }
+    /// Removes only Notcher's entries; true when something changed.
+    @discardableResult static func removeHooks(from settings: inout [String: Any]) -> Bool {
+        guard var hooks = settings["hooks"] as? [String: Any] else { return false }
+        var changed = false
+        for event in hookEvents {
+            guard let entries = hooks[event] as? [Any], entries.contains(where: isOurs) else { continue }
+            let kept = entries.filter { !isOurs($0) }
+            hooks[event] = kept.isEmpty ? nil : kept; changed = true
+        }
+        if changed { settings["hooks"] = hooks.isEmpty ? nil : hooks }
+        return changed
+    }
+    /// Brings an existing installation up to date: the script follows the app, missing hooks are added.
+    static func refreshHooks(settingsURL: URL = settingsURL, executablePath: String? = Bundle.main.executableURL?.path) throws {
+        guard let executable = executablePath,
+              var settings = try JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL)) as? [String: Any] else { return }
+        try writeHookWrapper(executable: executable)
+        if addHooks(to: &settings) {
+            try JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]).write(to: settingsURL, options: .atomic)
+        }
+    }
     static func uninstall(settingsURL: URL = settingsURL, recordURL: URL = recordURL) throws {
+        // The hooks go even when the status line below can no longer be restored safely.
+        if var current = try? JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL)) as? [String: Any], removeHooks(from: &current) {
+            try JSONSerialization.data(withJSONObject: current, options: [.prettyPrinted, .sortedKeys]).write(to: settingsURL, options: .atomic)
+        }
         guard let record = try JSONSerialization.jsonObject(with: Data(contentsOf: recordURL)) as? [String: Any],
               var settings = try JSONSerialization.jsonObject(with: Data(contentsOf: settingsURL)) as? [String: Any],
               let installed = record["installedCommand"] as? String,

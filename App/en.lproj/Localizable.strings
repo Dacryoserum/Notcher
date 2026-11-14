@@ -303,7 +303,7 @@
 "Vitesse" = "Speed";
 "Vive" = "Snappy";
 "Volume indisponible" = "Volume unavailable";
-"Volume à chaque appui, batterie au branchement du chargeur, écouteurs à leur connexion." = "Volume on every key press, battery when the charger is plugged in, headphones when they connect.";
+"Volume, chargeur, écouteurs, réponses de Claude Code, téléchargements terminés, prochain rendez-vous." = "Volume, charger, headphones, Claude Code answers, finished downloads, next meeting.";
 "« %@ » devient « %@ »" = "“%@” becomes “%@”";
 "« Complet » se compose dans l’onglet Widgets" = "“Full” is composed in the Widgets tab";
 "À actualiser" = "Needs refresh";
@@ -317,3 +317,36 @@
 "Éveil" = "Stay awake";
 "Événement" = "Event";
 "⌘⇧Espace est déjà utilisé. Notcher reste accessible dans la barre des menus." = "⌘⇧Space is already in use. Notcher is still available from the menu bar.";
+
+/* Mises à jour */
+"Mise à jour disponible : Notcher %@" = "Update available: Notcher %@";
+"Notcher %@ est disponible" = "Notcher %@ is available";
+"Version installée : %@" = "Installed version: %@";
+"En cours…" = "Working…";
+"Mettre à jour" = "Update";
+"Notcher se fermera et se rouvrira tout seul, déjà à jour." = "Notcher will close and reopen by itself, already up to date.";
+"Mises à jour" = "Updates";
+"Notcher regarde une fois par jour si une nouvelle version est parue sur GitHub." = "Notcher checks once a day whether a new version has been published on GitHub.";
+"Recherche…" = "Checking…";
+"Rechercher" = "Check now";
+"Les mises à jour ne sont pas configurées dans cette copie." = "Updates are not set up in this copy.";
+"La version %@ est disponible." = "Version %@ is available.";
+"Notcher est à jour." = "Notcher is up to date.";
+"Impossible de joindre GitHub. Nouvel essai plus tard." = "GitHub cannot be reached. Notcher will try again later.";
+"Impossible de joindre GitHub." = "GitHub cannot be reached.";
+"Téléchargement…" = "Downloading…";
+"Vérification de la signature…" = "Verifying the signature…";
+"Installation…" = "Installing…";
+"Redémarrage…" = "Restarting…";
+"Échec de la mise à jour : %@" = "The update failed: %@";
+"Déplace Notcher dans le dossier Applications pour pouvoir le mettre à jour." = "Move Notcher to the Applications folder to be able to update it.";
+"Cette copie de développement ne se met pas à jour toute seule." = "This development copy does not update itself.";
+"Notcher ne peut pas écrire dans le dossier où il est installé." = "Notcher cannot write to the folder it is installed in.";
+"L’archive de mise à jour ne contient pas l’application." = "The update archive does not contain the app.";
+"L’archive de mise à jour ne correspond pas à la version annoncée." = "The update archive does not match the announced version.";
+"L’installation de la mise à jour a échoué." = "Installing the update failed.";
+"L’empreinte SHA-256 de la mise à jour ne correspond pas." = "The SHA-256 checksum of the update does not match.";
+"La signature de la mise à jour est invalide." = "The signature of the update is invalid.";
+"La clé de vérification des mises à jour est invalide." = "The key that verifies updates is invalid.";
+"La mise à jour est anormalement volumineuse." = "The update is abnormally large.";
+"L’adresse de la mise à jour n’est pas sûre." = "The address of the update is not secure.";

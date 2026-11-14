@@ -20,3 +20,16 @@ Pour reconstruire avec les Command Line Tools de Xcode :
 ./Scripts/build.sh
 open dist/Notcher.app
 ```
+
+## Mises à jour
+
+Notcher regarde une fois par jour si une version plus récente est parue sur GitHub. Quand c’est le cas, un bouton vert apparaît dans le panneau ; il ouvre les réglages, d’où la mise à jour s’installe en un clic. L’archive téléchargée est refusée si son empreinte SHA-256 ou sa signature ed25519 ne correspondent pas à la clé publique intégrée à l’app.
+
+Publier une version :
+
+```sh
+./Scripts/release.sh --init-key   # une seule fois : crée la clé de signature dans le trousseau
+./Scripts/release.sh --publish    # tests, compilation, archive signée, brouillon de release sur GitHub
+```
+
+La clé privée ne quitte pas le trousseau du Mac qui publie. Sans elle, les copies installées ne peuvent plus être mises à jour : garde-en une copie en lieu sûr.

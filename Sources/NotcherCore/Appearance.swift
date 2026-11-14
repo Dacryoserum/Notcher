@@ -102,8 +102,9 @@ public enum PanelDismissal {
 
 /// Closed panels occupy only the menu-bar band, with symmetrical wings around the camera.
 public enum CompactPanel {
-    public static func size(notchWidth: CGFloat, notchHeight: CGFloat, media: Bool, focus: Bool, activity: Bool, idleInfo: Bool = true, hovered: Bool = false) -> CGSize {
-        let wing: CGFloat = activity ? 126 : (media || focus) ? 92 : idleInfo ? 72 : 14
+    public static func size(notchWidth: CGFloat, notchHeight: CGFloat, media: Bool, focus: Bool, activity: Bool, idleInfo: Bool = true, ambient: Bool = false, hovered: Bool = false) -> CGSize {
+        // `ambient`: a state or an event shown with pictures only, which needs less room than a titled activity.
+        let wing: CGFloat = activity ? 126 : (media || focus) ? 92 : (idleInfo || ambient) ? 72 : 14
         // A hovered notch swells a little to show it is ready for a click.
         return CGSize(width: notchWidth + wing * 2 + (hovered ? 14 : 0), height: notchHeight + (hovered ? 4 : 0))
     }

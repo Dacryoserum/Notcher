@@ -18,11 +18,12 @@ struct SettingsView: View {
     @ObservedObject var model: AppModel
     @ObservedObject private var preferences: Preferences
     @ObservedObject private var agents: AgentService
+    @ObservedObject private var updates: UpdateService
     @State private var pane: Pane
     @State private var error: String?
     @Namespace private var paneMarker
     init(model: AppModel, pane: Pane = .look) {
-        self.model = model; preferences = model.preferences; agents = model.agents
+        self.model = model; preferences = model.preferences; agents = model.agents; updates = model.updates
         _pane = State(initialValue: pane)
     }
     private var accent: Color { preferences.accentColor }
@@ -31,12 +32,13 @@ struct SettingsView: View {
         VStack(spacing: 0) {
             header
             Divider().overlay(Theme.border)
+            if let update = updates.available { UpdateBanner(updates: updates, update: update).padding(.horizontal, 28).padding(.top, 18) }
             ScrollView {
                 Group {
                     switch pane {
                     case .look: AppearancePane(preferences: preferences)
                     case .widgets: WidgetsPane(preferences: preferences)
-                    case .behavior: BehaviorPane(preferences: preferences, error: $error)
+                    case .behavior: BehaviorPane(preferences: preferences, updates: updates, error: $error)
                     case .services: ServicesPane(preferences: preferences, agents: agents, error: $error)
                     }
                 }.padding(.horizontal, 28).padding(.vertical, 22)
@@ -73,6 +75,43 @@ struct SettingsView: View {
             Text("Notcher \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0")")
                 .font(.system(size: 11)).foregroundStyle(Theme.muted).fixedSize()
         }.padding(.horizontal, 28).padding(.top, 38).padding(.bottom, 16)
+    }
+}
+
+// MARK: - Mise à jour
+
+/// Shown above every pane while a newer version waits: what it brings, and the button that installs it.
+private struct UpdateBanner: View {
+    @ObservedObject var updates: UpdateService
+    let update: AvailableUpdate
+    private var notes: AttributedString {
+        (try? AttributedString(markdown: update.notes, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(update.notes)
+    }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Circle().fill(Theme.green).frame(width: 9, height: 9)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L("Notcher %@ est disponible", update.version)).font(.system(size: 13, weight: .semibold))
+                    Text(L("Version installée : %@", updates.currentVersion)).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 12)
+                Button { updates.install() } label: {
+                    Text(L(updates.installing ? "En cours…" : "Mettre à jour")).font(.system(size: 11, weight: .semibold))
+                        .padding(.horizontal, 14).padding(.vertical, 8).foregroundStyle(.black).background(Theme.green, in: Capsule())
+                }.buttonStyle(PressStyle(scale: 0.96)).disabled(updates.installing)
+            }
+            if !update.notes.isEmpty {
+                ScrollView { Text(notes).font(.system(size: 11)).foregroundStyle(.white.opacity(0.8)).frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled).padding(10) }
+                    .frame(maxHeight: 96).background(Theme.raised, in: RoundedRectangle(cornerRadius: 9))
+            }
+            Text(verbatim: updates.installStatus ?? L("Notcher se fermera et se rouvrira tout seul, déjà à jour."))
+                .font(.system(size: 11)).foregroundStyle(updates.failed ? Theme.orange : Color.secondary)
+                .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
+        }
+        .padding(14)
+        .background(Theme.green.opacity(0.07), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Theme.green.opacity(0.28)))
     }
 }
 
@@ -496,6 +535,7 @@ private struct Switch: View {
 
 private struct BehaviorPane: View {
     @ObservedObject var preferences: Preferences
+    @ObservedObject var updates: UpdateService
     @Binding var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
@@ -531,7 +571,7 @@ private struct BehaviorPane: View {
                             if value { Haptics.enabled = true; Haptics.play(.levelChange) }
                         }))
                     }
-                    SettingRow(symbol: "speaker.wave.2", title: "Indicateurs dans le notch", subtitle: "Volume à chaque appui, batterie au branchement du chargeur, écouteurs à leur connexion.", divider: false) {
+                    SettingRow(symbol: "speaker.wave.2", title: "Indicateurs dans le notch", subtitle: "Volume, chargeur, écouteurs, réponses de Claude Code, téléchargements terminés, prochain rendez-vous.", divider: false) {
                         Switch(title: "Indicateurs dans le notch", isOn: $preferences.showHUD)
                     }
                 }
@@ -552,10 +592,13 @@ private struct BehaviorPane: View {
                             }.labelsHidden().frame(width: 130)
                         }
                     }
-                    SettingRow(symbol: "power", title: "Ouvrir à la connexion", subtitle: "Notcher démarre avec ta session.", divider: false) {
+                    SettingRow(symbol: "power", title: "Ouvrir à la connexion", subtitle: "Notcher démarre avec ta session.") {
                         Switch(title: "Ouvrir à la connexion", isOn: Binding(get: { preferences.launchAtLogin }, set: { value in
                             do { try preferences.setLogin(value); error = nil } catch let failure { error = failure.localizedDescription }
                         }))
+                    }
+                    SettingRow(symbol: "arrow.down.circle", title: "Mises à jour", subtitle: updates.checkStatus ?? "Notcher regarde une fois par jour si une nouvelle version est parue sur GitHub.", divider: false) {
+                        CapsuleButton(title: updates.checking ? "Recherche…" : "Rechercher", symbol: "arrow.clockwise") { updates.check() }.disabled(updates.checking || updates.installing)
                     }
                 }
             }

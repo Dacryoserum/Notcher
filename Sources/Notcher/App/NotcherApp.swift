@@ -32,6 +32,12 @@ import UserNotifications
             } catch { /* Status-line failures must not interrupt a Claude session. */ }
             return
         }
+        if args.contains("--claude-event") {
+            // Called by Claude Code's hooks: pass the event to the running app and leave at once.
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            if data.count <= 2_000_000, let event = ClaudeEvent.parse(data) { ClaudeRelay.post(event) }
+            return
+        }
         do { try AppPaths.prepare() }
         catch { fputs("Notcher : \(error.localizedDescription)\n", stderr); return }
         let preview = args.contains("--preview") || args.contains("--render-previews")

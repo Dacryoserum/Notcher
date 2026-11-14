@@ -259,7 +259,6 @@ struct PrompterView: View {
     @State private var speed: Double = 22
     @State private var mirrored = false
     @State private var textHeight: CGFloat = 0
-    private let tick = Timer.publish(every: 1.0 / 30, on: .main, in: .common).autoconnect()
     var body: some View {
         VStack(spacing: 12) {
             HStack {
@@ -277,7 +276,15 @@ struct PrompterView: View {
             }.clipped().background(Theme.surface, in: RoundedRectangle(cornerRadius: 16))
             HStack { Text("Vitesse"); Slider(value: $speed, in: 8...70).frame(width: 150); Spacer(); Text("\(Int(speed)) px/s") }.font(.system(size: 10)).foregroundStyle(.secondary)
         }.onChange(of: panelActive) { _, active in if !active { playing = false } }
-        .onReceive(tick) { _ in if playing && panelActive { offset += speed / 30; if offset >= textHeight + 24 { playing = false } } }
+        // Runs only while scrolling: a permanent 30 Hz timer kept firing with the prompter stopped and the notch closed.
+        .task(id: playing && panelActive) {
+            guard playing && panelActive else { return }
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .milliseconds(33)) } catch { return }
+                offset += speed / 30
+                if offset >= textHeight + 24 { playing = false }
+            }
+        }
     }
 }
 

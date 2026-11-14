@@ -76,6 +76,7 @@ struct NotchView: View {
                 }.buttonStyle(PressStyle(scale: 0.97)).help(model.preferences.title(for: tab) + " · ⌘\((model.visibleTabs.firstIndex(of: tab) ?? 0) + 1)").accessibilityLabel(model.preferences.title(for: tab)).accessibilityAddTraits(model.tab == tab ? .isSelected : [])
             }
             Spacer(minLength: 2)
+            UpdateButton(updates: model.updates) { model.openSettings?() }
             IconButton(symbol: model.pinned ? "pin.fill" : "pin", help: "Garder le panneau ouvert", tint: model.pinned ? model.preferences.accentColor : .secondary) { model.pinned.toggle(); Haptics.play(.levelChange) }
             IconButton(symbol: "gearshape", help: "Réglages") { model.openSettings?() }
             IconButton(symbol: "chevron.up", help: "Replier · Échap") { model.collapse() }
@@ -88,6 +89,27 @@ struct NotchView: View {
         case .notes: NotesView(model: model, notes: model.notes)
         case .agents: AgentsView(model: model, agents: model.agents)
         case .tools: ToolsView(model: model)
+        }
+    }
+}
+
+/// A green dot in the navigation while a newer version waits; it opens the settings, where it installs.
+private struct UpdateButton: View {
+    @ObservedObject var updates: UpdateService
+    var action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        if let update = updates.available {
+            Button(action: action) {
+                Circle().fill(Theme.green).frame(width: 9, height: 9)
+                    .frame(width: 32, height: 32)
+                    .background(Theme.green.opacity(hovering ? 0.26 : 0.16), in: RoundedRectangle(cornerRadius: 8))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle()).onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+            .help(L("Mise à jour disponible : Notcher %@", update.version)).accessibilityLabel(L("Mise à jour disponible : Notcher %@", update.version))
+            .transition(.opacity)
         }
     }
 }
@@ -109,8 +131,11 @@ struct NotchHeader: View {
                     if let activity = model.activity {
                         if let artwork = activity.artwork {
                             Image(nsImage: artwork).resizable().interpolation(.high).scaledToFit().frame(width: min(26, model.notchHeight - 6), height: min(26, model.notchHeight - 6))
+                                .modifier(PopIn(active: activity.pictureOnly))
                         } else { Image(systemName: activity.symbol).foregroundStyle(activity.color ?? accent).contentTransition(.symbolEffect(.replace)) }
-                        if !model.presentationExpanded { Text(L(activity.title)).font(.system(size: 10, weight: .medium)).lineLimit(1) }
+                        if !model.presentationExpanded && !activity.pictureOnly { Text(L(activity.title)).font(.system(size: 10, weight: .medium)).lineLimit(1) }
+                    } else if let ambient = model.ambient, !model.presentationExpanded {
+                        AmbientPicture(ambient: ambient, side: min(24, model.notchHeight - 6))
                     } else { CompactMedia(media: model.media, height: model.notchHeight, idle: idle) }
                 }
                 .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .leading : .center)
@@ -127,6 +152,11 @@ struct NotchHeader: View {
                     } else if let activity = model.activity, let trailing = activity.trailing {
                         Image(systemName: "battery.75percent").foregroundStyle(activity.color ?? accent)
                         Text(trailing).font(.system(size: 10, weight: .medium, design: .monospaced))
+                    } else if let activity = model.activity, let mark = activity.mark {
+                        Image(systemName: mark).font(.system(size: 15, weight: .semibold)).foregroundStyle(activity.markColor ?? accent)
+                            .modifier(PopIn(active: true, delay: 0.18))
+                    } else if let ambient = model.ambient, !model.presentationExpanded, model.activity == nil {
+                        AmbientTrailing(ambient: ambient)
                     } else { CompactStatus(media: model.media, focus: model.focus, idle: idle) }
                 }
                 .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .trailing : .leading)
@@ -135,6 +165,57 @@ struct NotchHeader: View {
         }.font(.system(size: 12))
         .frame(maxHeight: .infinity).clipped()
         .contentShape(Rectangle())
+    }
+}
+/// Springs a picture into place when it appears, so an event reads as an arrival rather than a swap.
+private struct PopIn: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let active: Bool
+    var delay: Double = 0
+    @State private var shown = false
+    func body(content: Content) -> some View {
+        let settled = shown || !active
+        content.scaleEffect(settled || reduceMotion ? 1 : 0.3).opacity(settled ? 1 : 0)
+            .onAppear { withAnimation(reduceMotion ? nil : .spring(duration: 0.5, bounce: 0.5).delay(delay)) { shown = true } }
+    }
+}
+/// Left wing of a lasting state: its picture, alive while the state is.
+private struct AmbientPicture: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.notcherAccent) private var accent
+    let ambient: NotchAmbient
+    let side: CGFloat
+    @State private var beat = false
+    var body: some View {
+        Group {
+            if let artwork = ambient.artwork { Image(nsImage: artwork).resizable().interpolation(.high).scaledToFit().frame(width: side, height: side) }
+            else { Image(systemName: ambient.symbol).font(.system(size: 13, weight: .medium)).foregroundStyle(ambient.color ?? accent) }
+        }
+        .scaleEffect(beat && ambient.motion == .breathing ? 0.84 : 1)
+        .opacity(beat && ambient.motion == .pulsing ? 0.4 : 1)
+        .modifier(PopIn(active: true))
+        .onAppear { animate() }
+        .onChange(of: ambient.motion) { _, _ in animate() }
+    }
+    private func animate() {
+        beat = false
+        guard ambient.motion != .none, !reduceMotion else { return }
+        withAnimation(.easeInOut(duration: ambient.motion == .pulsing ? 0.6 : 1.1).repeatForever(autoreverses: true)) { beat = true }
+    }
+}
+/// Right wing of a lasting state: a figure when there is one, a moving symbol otherwise.
+private struct AmbientTrailing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.notcherAccent) private var accent
+    let ambient: NotchAmbient
+    var body: some View {
+        if let trailing = ambient.trailing {
+            Text(trailing).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1).fixedSize()
+        } else if let mark = ambient.mark {
+            Image(systemName: mark).font(.system(size: 12, weight: .semibold)).foregroundStyle(ambient.color ?? accent)
+                .symbolEffect(.variableColor.iterative, options: .repeating, isActive: !reduceMotion && ambient.motion == .breathing)
+                .symbolEffect(.pulse, options: .repeating, isActive: !reduceMotion && ambient.motion == .pulsing)
+        }
     }
 }
 private struct CompactMedia: View {

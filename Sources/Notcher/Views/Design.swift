@@ -8,6 +8,8 @@ enum Theme {
     static let muted = Color(white: 0.50)
     static let border = Color.white.opacity(0.07)
     static let orange = Color(red: 0.92, green: 0.61, blue: 0.39)
+    /// "Something new is ready": the update button, whatever the accent colour.
+    static let green = Color(red: 0.25, green: 0.84, blue: 0.42)
 }
 
 private struct NotcherAccentKey: EnvironmentKey {

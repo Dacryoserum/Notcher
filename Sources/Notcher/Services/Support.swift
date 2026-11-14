@@ -47,6 +47,10 @@ enum Command {
             }
             defer {
                 pipe.fileHandleForReading.readabilityHandler = nil
+                // Close both ends now: left to deallocation, the descriptors pile up by the hundred
+                // (one child every second or two) until the process runs out of them.
+                try? pipe.fileHandleForReading.close()
+                try? pipe.fileHandleForWriting.close()
                 if process.isRunning {
                     process.terminate()
                     DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 0.15) {

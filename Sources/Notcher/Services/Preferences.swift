@@ -54,7 +54,7 @@ import NotcherCore
         accentHex = AccentColor(hex: defaults.string(forKey: "accentHex") ?? "")?.hex ?? AccentColor.default.hex
         motionStyle = MotionStyle(rawValue: defaults.string(forKey: "motionStyle") ?? "") ?? .smooth
         closeDelay = CloseDelay(rawValue: defaults.string(forKey: "closeDelay") ?? "") ?? .normal
-        compactStyle = CompactStyle(rawValue: defaults.string(forKey: "compactStyle") ?? "") ?? .info
+        compactStyle = CompactStyle(rawValue: defaults.string(forKey: "compactStyle") ?? "") ?? .minimal
         hiddenTabs = Set(defaults.stringArray(forKey: "hiddenTabs") ?? [])
     }
     var accentColor: Color {
@@ -78,7 +78,7 @@ import NotcherCore
     func resetAppearance() {
         accentHex = AccentColor.default.hex
         dashboardLayout = .overview; panelSize = .compact; navigationStyle = .labels
-        motionStyle = .smooth; compactStyle = .info; hiddenTabs = []
+        motionStyle = .smooth; compactStyle = .minimal; hiddenTabs = []
     }
     func setLogin(_ enabled: Bool) throws {
         if enabled { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }

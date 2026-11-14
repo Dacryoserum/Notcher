@@ -45,6 +45,21 @@ struct NotchActivity: Equatable {
     var trailing: String? = nil
     /// Extra line under the notch; the closed panel grows to hold it.
     var details: [String] = []
+    /// Symbol for the right wing of an event told with pictures only (no title).
+    var mark: String? = nil
+    var markColor: Color? = nil
+    var pictureOnly: Bool { title.isEmpty }
+}
+/// A state shown in the closed notch for as long as it lasts: Claude answering, a meeting coming up…
+struct NotchAmbient: Equatable {
+    enum Motion { case none, breathing, pulsing }
+    var symbol: String
+    var artwork: NSImage? = nil
+    var color: Color? = nil
+    /// Right wing: a short text, or a symbol when there is nothing to count.
+    var trailing: String? = nil
+    var mark: String? = nil
+    var motion = Motion.none
 }
 
 @MainActor final class AppModel: ObservableObject {
@@ -58,6 +73,8 @@ struct NotchActivity: Equatable {
     let camera = CameraService()
     let shortcuts = ShortcutsService()
     let bluetooth = BluetoothService()
+    let updates = UpdateService()
+    let downloads = DownloadWatcher()
     lazy var agents = AgentService(preferences: preferences)
     lazy var clipboard = ClipboardService(preferences: preferences)
     @Published var expanded = false
@@ -68,6 +85,8 @@ struct NotchActivity: Equatable {
     @Published var tab: NotchTab = .home
     @Published var toolTab: ToolTab = .focus
     @Published var activity: NotchActivity?
+    @Published private(set) var ambient: NotchAmbient?
+    private var ambientTimer: Timer?
     @Published var toast: String?
     @Published var notchWidth: CGFloat = 190
     @Published var notchHeight: CGFloat = 32
@@ -87,7 +106,8 @@ struct NotchActivity: Equatable {
     var pageHeight: CGFloat { preferences.panelSize.pageHeight }
     var collapsedSize: CGSize {
         CompactPanel.size(notchWidth: notchWidth, notchHeight: notchHeight, media: media.compactTrack != nil, focus: focus.clock.deadline != nil,
-                          activity: activity != nil, idleInfo: preferences.compactStyle == .info, hovered: hovering)
+                          activity: activity.map { !$0.pictureOnly } ?? false, idleInfo: preferences.compactStyle == .info,
+                          ambient: ambient != nil || activity?.pictureOnly == true, hovered: hovering)
     }
     var targetSize: CGSize { CGSize(width: width, height: height) }
     /// Height of the strip under the closed notch that holds an activity's details.
@@ -108,6 +128,15 @@ struct NotchActivity: Equatable {
             guard let self, self.preferences.showHUD else { return }
             let level = self.system.battery.map { Double($0) / 100 }
             self.showActivity(.init(symbol: charging ? "bolt.fill" : "battery.75percent", title: charging ? "En charge" : "Sur batterie", value: level), seconds: 3)
+        }
+        agents.onClaudeFinished = { [weak self] in
+            guard let self, self.preferences.showHUD else { return }
+            self.showActivity(.init(symbol: "asterisk", title: "", color: Theme.orange, artwork: ClaudeMark.icon, mark: "checkmark.circle.fill", markColor: Theme.green), seconds: 3.5)
+            Haptics.play(.levelChange)
+        }
+        downloads.onFinished = { [weak self] path in
+            guard let self, self.preferences.showHUD else { return }
+            self.showActivity(.init(symbol: "doc.fill", title: "", artwork: DownloadWatcher.icon(for: path), mark: "arrow.down.circle.fill"), seconds: 3.5)
         }
         system.onHeadphones = { [weak self] name in self?.announceHeadphones(name) }
         // A new song is named in the closed notch for a moment; the first one seen at launch is not news.
@@ -144,12 +173,29 @@ struct NotchActivity: Equatable {
         $activity.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         media.$track.map { $0 != nil }.removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         focus.$clock.map { $0.deadline != nil }.removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
+        // Published values change after their publisher fires: the state is recomputed on the next turn of the run loop.
+        let sources: [AnyPublisher<Void, Never>] = [
+            agents.$claudeWorking.map { _ in }.eraseToAnyPublisher(), agents.$claudeWaiting.map { _ in }.eraseToAnyPublisher(),
+            agents.$claude.map { _ in }.eraseToAnyPublisher(), agents.$claudePromptAt.map { _ in }.eraseToAnyPublisher(), media.$track.map { _ in }.eraseToAnyPublisher(),
+            media.$resting.map { _ in }.eraseToAnyPublisher(), focus.$clock.map { _ in }.eraseToAnyPublisher(),
+            calendar.$events.map { _ in }.eraseToAnyPublisher(), system.$battery.map { _ in }.eraseToAnyPublisher(),
+            system.$charging.map { _ in }.eraseToAnyPublisher(), system.$awake.map { _ in }.eraseToAnyPublisher(),
+            preferences.$showHUD.map { _ in }.eraseToAnyPublisher()
+        ]
+        Publishers.MergeMany(sources).receive(on: RunLoop.main).sink { [weak self] in self?.refreshAmbient() }.store(in: &subscriptions)
+        agents.$claudePromptAt.sink { [weak self] _ in
+            Task { try? await Task.sleep(for: .seconds(Self.claudeAnswerDisplay + 0.05)); self?.refreshAmbient() }
+        }.store(in: &subscriptions)
+        $ambient.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
+        // Countdowns (minutes before a meeting, awake time left) move without any publisher firing.
+        ambientTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in Task { @MainActor in self?.refreshAmbient() } }
+        ambientTimer?.tolerance = 5
         shelf.start(retentionHours: preferences.retentionHours)
-        media.start(); system.start(); agents.start(); focus.start(); calendar.start(); clipboard.start()
+        media.start(); system.start(); agents.start(); focus.start(); calendar.start(); clipboard.start(); updates.start(); downloads.start()
         cleanupTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in Task { @MainActor in guard let self else { return }; self.shelf.purge(hours: self.preferences.retentionHours) } }
     }
     func stop() {
-        notes.save(); media.stop(); system.stop(); agents.stop(); focus.stop(); calendar.stop(); camera.stop(); clipboard.stop(); bluetooth.cancel(); cleanupTimer?.invalidate()
+        notes.save(); media.stop(); system.stop(); agents.stop(); focus.stop(); calendar.stop(); camera.stop(); clipboard.stop(); bluetooth.cancel(); updates.stop(); downloads.stop(); cleanupTimer?.invalidate(); ambientTimer?.invalidate()
     }
     func expand(tab: NotchTab? = nil) {
         if let tab { self.tab = tab } // A drop may reveal a tab hidden from the navigation.
@@ -191,6 +237,38 @@ struct NotchActivity: Equatable {
                 if info.summary != nil { return }
             }
         }
+    }
+    /// How long the closed notch shows that Claude has started answering; the end of the answer is announced separately.
+    static let claudeAnswerDisplay: TimeInterval = 5
+    private func refreshAmbient() {
+        let value = currentAmbient()
+        if value != ambient { ambient = value }
+    }
+    /// The one lasting state worth showing, most pressing first. Nil leaves the notch bare, or to the
+    /// timer and the player, which draw themselves.
+    func currentAmbient(now: Date = Date()) -> NotchAmbient? {
+        guard preferences.showHUD else { return nil }
+        if agents.claudeWaiting > 0 {
+            return NotchAmbient(symbol: "asterisk", artwork: ClaudeMark.icon, color: Theme.orange, mark: "hand.raised.fill", motion: .pulsing)
+        }
+        if focus.clock.deadline != nil { return nil }
+        if agents.claudeWorking > 0, let asked = agents.claudePromptAt, now.timeIntervalSince(asked) < Self.claudeAnswerDisplay {
+            let quota = agents.claude.flatMap { usage in usage.isStale(at: now) ? nil : usage.windows.first { $0.id == "five_hour" && !$0.isExpired(at: now) } }
+            return NotchAmbient(symbol: "asterisk", artwork: ClaudeMark.icon, color: Theme.orange,
+                                trailing: quota.map { "\(Int($0.usedPercent.rounded())) %" }, mark: "ellipsis", motion: .breathing)
+        }
+        if media.compactTrack != nil { return nil }
+        let soon = calendar.events.filter { !$0.allDay && $0.start > now && $0.start.timeIntervalSince(now) <= 30 * 60 }.min { $0.start < $1.start }
+        if let soon {
+            return NotchAmbient(symbol: "calendar", color: Color(nsColor: soon.color), trailing: L("%lld min", Int((soon.start.timeIntervalSince(now) / 60).rounded(.up))))
+        }
+        if let level = system.battery, level <= 20, !system.charging {
+            return NotchAmbient(symbol: "battery.25percent", color: .red, trailing: "\(level) %")
+        }
+        if system.awake {
+            return NotchAmbient(symbol: "cup.and.saucer.fill", trailing: system.awakeRemaining.map { L("%lld min", Int(($0 / 60).rounded(.up))) })
+        }
+        return nil
     }
     func showActivity(_ value: NotchActivity, seconds: Double) {
         activityTask?.cancel(); activity = value

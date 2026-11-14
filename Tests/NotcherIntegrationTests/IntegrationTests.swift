@@ -28,6 +28,36 @@ final class IntegrationTests: XCTestCase {
         let restored = try JSONSerialization.jsonObject(with: Data(contentsOf: settings))
         XCTAssertEqual(try JSONSerialization.data(withJSONObject: restored, options: [.sortedKeys]), data)
     }
+    func testClaudeHooksSitNextToTheUsersOwnAndLeaveWithoutThem() throws {
+        let settings = directory.appendingPathComponent("settings.json"), record = directory.appendingPathComponent("record.json")
+        let own: [String: Any] = ["matcher": "Bash", "hooks": [["type": "command", "command": "/usr/local/bin/mine"]]]
+        let original: [String: Any] = ["hooks": ["PreToolUse": [own], "Stop": [own]]]
+        let data = try JSONSerialization.data(withJSONObject: original, options: [.sortedKeys])
+        try data.write(to: settings)
+        try ClaudeIntegration.install(settingsURL: settings, recordURL: record, executablePath: "/tmp/test path/Notcher")
+        // Refreshing an up-to-date installation adds nothing twice.
+        try ClaudeIntegration.refreshHooks(settingsURL: settings, executablePath: "/tmp/test path/Notcher")
+        let hooks = (try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as! [String: Any])["hooks"] as! [String: [[String: Any]]]
+        XCTAssertEqual(hooks["PreToolUse"]?.count, 1)
+        XCTAssertEqual(hooks["Stop"]?.count, 2)
+        for event in ClaudeIntegration.hookEvents {
+            let commands = hooks[event]?.flatMap { ($0["hooks"] as? [[String: Any]] ?? []).compactMap { $0["command"] as? String } } ?? []
+            XCTAssertEqual(commands.filter { $0 == ClaudeIntegration.hookCommand }.count, 1, event)
+        }
+        let wrapper = try String(contentsOf: ClaudeIntegration.hookWrapper, encoding: .utf8)
+        XCTAssertTrue(wrapper.contains("exec '/tmp/test path/Notcher' --claude-event"))
+        try ClaudeIntegration.uninstall(settingsURL: settings, recordURL: record)
+        let restored = try JSONSerialization.jsonObject(with: Data(contentsOf: settings))
+        XCTAssertEqual(try JSONSerialization.data(withJSONObject: restored, options: [.sortedKeys]), data)
+    }
+    func testOlderInstallationGainsTheHooksOnRefresh() throws {
+        let settings = directory.appendingPathComponent("settings.json")
+        try Data(#"{"statusLine":{"type":"command","command":"x"},"hooks":{"Stop":"not a list"}}"#.utf8).write(to: settings)
+        try ClaudeIntegration.refreshHooks(settingsURL: settings, executablePath: "/tmp/Notcher")
+        let hooks = (try JSONSerialization.jsonObject(with: Data(contentsOf: settings)) as! [String: Any])["hooks"] as! [String: Any]
+        XCTAssertEqual(hooks["Stop"] as? String, "not a list") // What Notcher does not understand is left alone.
+        XCTAssertEqual((hooks["UserPromptSubmit"] as? [Any])?.count, 1)
+    }
     func testClaudeUninstallDoesNotOverwriteNewUserChanges() throws {
         let settings = directory.appendingPathComponent("settings.json"), record = directory.appendingPathComponent("record.json")
         try Data("{}".utf8).write(to: settings)

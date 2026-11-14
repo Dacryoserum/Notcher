@@ -35,7 +35,8 @@ struct TaskItem: Codable, Identifiable {
         guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in
-                guard let self else { return }
+                // A stopped timer has nothing to redraw: publishing anyway woke every view that shows it, each second.
+                guard let self, self.clock.deadline != nil else { return }
                 self.now = Date()
                 if self.clock.finishIfNeeded(at: self.now) {
                     self.save(); NSSound(named: "Glass")?.play(); self.onFinished?()
