@@ -26,7 +26,7 @@ Native SwiftUI + AppKit · no dependencies · everything stays on your Mac.
 
 ## Highlights
 
-- **A notch that tells you things.** At rest it stays bare. It wakes up when it has something to say: the song that just started, Claude Code answering, waiting for your permission or done, a download that finished, a meeting in a few minutes, a low battery, your AirPods connecting with each earbud's charge.
+- **A notch that tells you things.** At rest it stays bare. It wakes up when it has something to say: Claude Code answering, waiting for your permission or done, a download that finished, a meeting in a few minutes, a low battery, your AirPods connecting with each earbud's charge.
 - **One hover away.** Open it on hover, on hover then click, or on click only. It closes by itself when you leave, unless you pin it.
 - **An overview you compose.** Eleven widgets (music, Pomodoro, volume, calendar, text, clipboard, shelf, battery, quotas, clock, keep awake) on a grid you arrange and resize, each one showing more as it grows.
 - **Built for the keyboard too.** A global shortcut you choose, `⌘1`…`⌘5` between tabs, Finder-style keys on the shelf.
@@ -49,7 +49,7 @@ Native SwiftUI + AppKit · no dependencies · everything stays on your Mac.
 </tr>
 <tr>
 <td><b>Text</b> — scratch sheets, each with its own undo history. Format or compact JSON, encode and decode Base64 or URLs, sort and dedupe lines, send a sheet to Notes or export it.</td>
-<td><b>Agents</b> — your Claude Code and Codex rate limits at a glance, with when they reset.</td>
+<td><b>Agents</b> (developer mode) — your Claude Code and Codex rate limits at a glance, the sub-agents at work, and their permission requests answered from the notch.</td>
 </tr>
 </table>
 
@@ -57,8 +57,8 @@ Native SwiftUI + AppKit · no dependencies · everything stays on your Mac.
 
 ## Install
 
-1. Download `Notcher-<version>-macos-arm64.zip` from the [latest release](https://github.com/Dacryoserum/Notcher/releases/latest).
-2. Unzip it and move **Notcher.app** to **Applications**.
+1. Download `Notcher-<version>-macos-arm64.dmg` from the [latest release](https://github.com/Dacryoserum/Notcher/releases/latest).
+2. Open it and drag **Notcher** onto **Applications**.
 3. Open it. Notcher lives in the menu bar, with no Dock icon.
 
 > [!NOTE]

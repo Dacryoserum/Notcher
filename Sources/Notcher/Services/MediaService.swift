@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 import NotcherCore
 
 struct NowPlaying: Decodable, Sendable, Equatable {
@@ -62,6 +63,8 @@ struct MediaClient: Sendable {
 @MainActor final class MediaService: ObservableObject {
     @Published private(set) var track: NowPlaying?
     @Published private(set) var artwork: NSImage?
+    /// The cover's own colour, for what is drawn beside it; nil without a cover.
+    @Published private(set) var tint: Color?
     @Published private(set) var error: String?
     @Published private(set) var available = true
     /// True once a paused player has been idle long enough to give the closed notch back.
@@ -104,7 +107,7 @@ struct MediaClient: Sendable {
     init(client: MediaClient = .live, artworkClient: ArtworkClient = .live, now: @escaping @Sendable () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.client = client; self.now = now
         artworkService = ArtworkService(client: artworkClient)
-        artworkService.onChange = { [weak self] in self?.artwork = $0 }
+        artworkService.onChange = { [weak self] in self?.artwork = $0; self?.tint = $0.flatMap(Self.tint(of:)) }
     }
     func start() {
         guard timer == nil else { return }
@@ -122,7 +125,21 @@ struct MediaClient: Sendable {
     }
     /// Demo recording only (--record-demo): shows a track without asking any player.
     func showDemo(_ value: NowPlaying?, artwork image: NSImage?) {
-        track = value; artwork = image; sampledAt = now(); updateRest()
+        track = value; artwork = image; tint = image.flatMap(Self.tint(of:)); sampledAt = now(); updateRest()
+    }
+    /// Reads the cover on a 24-point thumbnail: enough to name its colour, cheap enough for every track change.
+    static func tint(of image: NSImage) -> Color? {
+        let side = 24
+        // The context owns its bitmap: a Swift array would only be lent to it for the length of one call.
+        guard let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let context = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                      space: CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        context.interpolationQuality = .low
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: side, height: side))
+        guard let data = context.data else { return nil }
+        let pixels = Array(UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: side * side * 4))
+        // A black and white cover has no colour to lend: the bars go white rather than borrow the app's accent.
+        return CoverTint.dominant(rgba: pixels).map { Color(red: $0.red, green: $0.green, blue: $0.blue) } ?? Color(white: 0.92)
     }
     func setEnabled(_ value: Bool) {
         guard enabled != value else { return }

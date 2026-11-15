@@ -11,7 +11,7 @@ final class LocalizationTests: XCTestCase {
         "1 h", "24 h", "Claude Code", "Codex", "AirDrop", "Bluetooth", "Format", "Compact", "Pomodoro", "Volume",
         "Quotas", "Session", "%lld min", "%lld fichiers",
         // Claude Code hook event names.
-        "UserPromptSubmit", "PostToolUse", "Notification", "Stop", "SessionEnd"
+        "UserPromptSubmit", "PostToolUse", "Notification", "Stop", "SessionEnd", "SubagentStart", "SubagentStop"
     ]
 
     private func table(_ language: String) throws -> [String: String] {

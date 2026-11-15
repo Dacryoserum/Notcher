@@ -26,7 +26,7 @@ SwiftUI + AppKit natif · aucune dépendance · tout reste sur ton Mac.
 
 ## En bref
 
-- **Un notch qui te parle.** Au repos, il reste nu. Il s'anime quand il a quelque chose à dire : le morceau qui commence, Claude Code qui répond, attend ta permission ou a terminé, un téléchargement fini, un rendez-vous dans quelques minutes, une batterie faible, tes AirPods qui se connectent avec la charge de chaque écouteur.
+- **Un notch qui te parle.** Au repos, il reste nu. Il s'anime quand il a quelque chose à dire : Claude Code qui répond, attend ta permission ou a terminé, un téléchargement fini, un rendez-vous dans quelques minutes, une batterie faible, tes AirPods qui se connectent avec la charge de chaque écouteur.
 - **À un survol.** Il s'ouvre au survol, au survol puis clic, ou au clic seulement. Il se referme tout seul quand tu pars, sauf si tu l'épingles.
 - **Un aperçu que tu composes.** Onze widgets (musique, Pomodoro, volume, agenda, texte, presse-papiers, dépôt, batterie, quotas, horloge, éveil) sur une grille que tu organises et redimensionnes ; chacun en montre plus quand il grandit.
 - **Pensé aussi pour le clavier.** Un raccourci global que tu choisis, `⌘1`…`⌘5` entre les onglets, les touches du Finder dans le dépôt.
@@ -49,7 +49,7 @@ SwiftUI + AppKit natif · aucune dépendance · tout reste sur ton Mac.
 </tr>
 <tr>
 <td><b>Texte</b> : des fiches de brouillon, chacune avec son propre historique d'annulation. Formater ou compacter du JSON, encoder et décoder du Base64 ou des URL, trier et dédoublonner des lignes, envoyer une fiche vers Notes ou l'exporter.</td>
-<td><b>Agents</b> : les limites de Claude Code et de Codex d'un coup d'œil, avec l'heure de leur remise à zéro.</td>
+<td><b>Agents</b> (mode développeur) : les limites de Claude Code et de Codex d'un coup d'œil, les sous-agents au travail, et leurs demandes de permission auxquelles tu réponds depuis le notch.</td>
 </tr>
 </table>
 
@@ -57,8 +57,8 @@ SwiftUI + AppKit natif · aucune dépendance · tout reste sur ton Mac.
 
 ## Installer
 
-1. Télécharge `Notcher-<version>-macos-arm64.zip` depuis la [dernière version](https://github.com/Dacryoserum/Notcher/releases/latest).
-2. Décompresse-le et déplace **Notcher.app** dans **Applications**.
+1. Télécharge `Notcher-<version>-macos-arm64.dmg` depuis la [dernière version](https://github.com/Dacryoserum/Notcher/releases/latest).
+2. Ouvre-le et glisse **Notcher** sur **Applications**.
 3. Ouvre-le. Notcher vit dans la barre des menus, sans icône dans le Dock.
 
 > [!NOTE]

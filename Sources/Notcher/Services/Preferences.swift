@@ -6,7 +6,6 @@ import NotcherCore
     @Published var homeLayout: HomeLayout { didSet { defaults.set(homeLayout.encoded, forKey: "homeLayout") } }
     @Published var openMode: OpenMode { didSet { defaults.set(openMode.rawValue, forKey: "openMode") } }
     @Published var mediaRestMinutes: Int { didSet { defaults.set(mediaRestMinutes, forKey: "mediaRestMinutes") } }
-    @Published var announceTrack: Bool { didSet { defaults.set(announceTrack, forKey: "announceTrack") } }
     @Published var haptics: Bool { didSet { defaults.set(haptics, forKey: "haptics") } }
     @Published var mediaEnabled: Bool { didSet { defaults.set(mediaEnabled, forKey: "mediaEnabled") } }
     @Published var clipboardEnabled: Bool { didSet { defaults.set(clipboardEnabled, forKey: "clipboardEnabled") } }
@@ -14,6 +13,14 @@ import NotcherCore
     @Published var screenID: Int { didSet { defaults.set(screenID, forKey: "screenID") } }
     @Published var codexPath: String { didSet { defaults.set(codexPath, forKey: "codexPath") } }
     @Published var codexEnabled: Bool { didSet { defaults.set(codexEnabled, forKey: "codexEnabled") } }
+    /// Everything about AI coding agents (the Agents tab, quotas, Claude Code and Codex connections, questions
+    /// answered from the notch) only exists in developer mode.
+    @Published var developerMode: Bool { didSet { defaults.set(developerMode, forKey: "developerMode") } }
+    /// Claude Code's permission questions can be answered in the notch.
+    @Published var agentApprovals: Bool { didSet { defaults.set(agentApprovals, forKey: "agentApprovals") } }
+    @Published var clockStyle: ClockStyle { didSet { defaults.set(clockStyle.rawValue, forKey: "clockStyle") } }
+    /// The minutes of the clock widget take the accent colour.
+    @Published var clockTwoTone: Bool { didSet { defaults.set(clockTwoTone, forKey: "clockTwoTone") } }
     @Published var showHUD: Bool { didSet { defaults.set(showHUD, forKey: "showHUD") } }
     @Published var dashboardLayout: DashboardLayout { didSet { defaults.set(dashboardLayout.rawValue, forKey: "dashboardLayout") } }
     @Published var panelSize: PanelSize { didSet { defaults.set(panelSize.rawValue, forKey: "panelSize") } }
@@ -37,7 +44,7 @@ import NotcherCore
     let defaults: UserDefaults
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        defaults.register(defaults: ["openOnHover": true, "mediaRestMinutes": 5, "announceTrack": true, "haptics": true, "mediaEnabled": true, "retentionHours": 24, "showHUD": true])
+        defaults.register(defaults: ["openOnHover": true, "mediaRestMinutes": 5, "haptics": true, "mediaEnabled": true, "retentionHours": 24, "showHUD": true, "clockTwoTone": true, "agentApprovals": true])
         let chosen = defaults.string(forKey: "appLanguage") ?? "system"
         language = ["fr", "en"].contains(chosen) ? chosen : "system"
         homeLayout = HomeLayout.restore(defaults.data(forKey: "homeLayout"))
@@ -45,10 +52,16 @@ import NotcherCore
         openMode = OpenMode(rawValue: defaults.string(forKey: "openMode") ?? "") ?? (defaults.bool(forKey: "openOnHover") ? .hover : .click)
         let rest = defaults.integer(forKey: "mediaRestMinutes")
         mediaRestMinutes = MediaRest.choices.contains(rest) ? rest : 5
-        announceTrack = defaults.bool(forKey: "announceTrack"); haptics = defaults.bool(forKey: "haptics")
+        haptics = defaults.bool(forKey: "haptics")
         mediaEnabled = defaults.bool(forKey: "mediaEnabled"); clipboardEnabled = defaults.bool(forKey: "clipboardEnabled")
         retentionHours = defaults.integer(forKey: "retentionHours"); screenID = defaults.integer(forKey: "screenID")
         codexPath = defaults.string(forKey: "codexPath") ?? ""; codexEnabled = defaults.bool(forKey: "codexEnabled")
+        // Someone who already connected an agent keeps everything they had before developer mode existed.
+        let connected = defaults.bool(forKey: "codexEnabled") || FileManager.default.fileExists(atPath: AppPaths.integrations.appendingPathComponent("claude-install.json").path)
+        developerMode = defaults.object(forKey: "developerMode") == nil ? connected : defaults.bool(forKey: "developerMode")
+        agentApprovals = defaults.bool(forKey: "agentApprovals")
+        clockStyle = ClockStyle(rawValue: defaults.string(forKey: "clockStyle") ?? "") ?? .tall
+        clockTwoTone = defaults.bool(forKey: "clockTwoTone")
         showHUD = defaults.bool(forKey: "showHUD")
         dashboardLayout = DashboardLayout(rawValue: defaults.string(forKey: "dashboardLayout") ?? "") ?? .overview
         panelSize = PanelSize(rawValue: defaults.string(forKey: "panelSize") ?? "") ?? .compact

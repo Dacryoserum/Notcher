@@ -9,12 +9,14 @@ enum ClaudeRelay {
     static func post(_ event: ClaudeEvent) {
         var info = ["kind": event.kind.rawValue, "session": event.session]
         if let detail = event.detail { info["detail"] = detail }
+        if let agent = event.agent { info["agent"] = agent }
+        if let type = event.agentType { info["agentType"] = type }
         DistributedNotificationCenter.default().postNotificationName(name, object: nil, userInfo: info, deliverImmediately: true)
     }
     static func event(from info: [AnyHashable: Any]?) -> ClaudeEvent? {
         guard let raw = info?["kind"] as? String, let kind = ClaudeEvent.Kind(rawValue: raw),
               let session = info?["session"] as? String, !session.isEmpty else { return nil }
-        return ClaudeEvent(kind: kind, session: session, detail: info?["detail"] as? String)
+        return ClaudeEvent(kind: kind, session: session, detail: info?["detail"] as? String, agent: info?["agent"] as? String, agentType: info?["agentType"] as? String)
     }
 }
 

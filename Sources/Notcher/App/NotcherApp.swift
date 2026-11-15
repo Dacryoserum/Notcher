@@ -38,6 +38,16 @@ import UserNotifications
             if data.count <= 2_000_000, let event = ClaudeEvent.parse(data) { ClaudeRelay.post(event) }
             return
         }
+        if args.contains("--claude-permission") || args.contains("--codex-permission") {
+            // Called by Claude Code or Codex before it asks for a permission: the notch answers, or says
+            // nothing and the agent asks in the terminal as usual.
+            let data = FileHandle.standardInput.readDataToEndOfFile()
+            let agent: ClaudePermissionRequest.Agent = args.contains("--codex-permission") ? .codex : .claude
+            guard data.count <= 8_000_000, let request = ClaudePermissionRequest.parse(data, agent: agent), let answer = PermissionChannel.ask(request),
+                  let output = answer.hookOutput(denyMessage: "Refused from the Notcher notch.") else { return }
+            FileHandle.standardOutput.write(output)
+            return
+        }
         do { try AppPaths.prepare() }
         catch { fputs("Notcher : \(error.localizedDescription)\n", stderr); return }
         let preview = args.contains("--preview") || args.contains("--render-previews") || args.contains("--record-demo")

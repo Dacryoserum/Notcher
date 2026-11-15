@@ -41,6 +41,7 @@ import NotcherCore
         self.output = output
         UserDefaults().removePersistentDomain(forName: Self.suite)
         let preferences = Preferences(defaults: UserDefaults(suiteName: Self.suite) ?? .standard)
+        preferences.developerMode = true
         preferences.codexEnabled = true
         preferences.openMode = .touch
         model = AppModel(preferences: preferences)

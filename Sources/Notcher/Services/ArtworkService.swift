@@ -18,6 +18,7 @@ struct SpotifyArtwork: Decodable, Sendable {
 struct ArtworkClient: Sendable {
     var fetch: @Sendable (NowPlaying) async throws -> Data?
     static let live = ArtworkClient { track in
+        if track.isAppleMusic { return try await musicCover(track) }
         guard track.canRequestSpotifyArtwork else { return nil }
         // Preferred: the address delivered with the track. The separate lookup remains for sources without one.
         if let url = track.remoteArtworkURL { return try await download(url) }
@@ -28,6 +29,39 @@ struct ArtworkClient: Sendable {
         var described = track; described.artworkURL = value.url
         guard value.matches(track), let url = described.remoteArtworkURL else { return nil }
         return try await download(url)
+    }
+    /// Music hands the cover of its current track to a script. The title is checked inside the same
+    /// script, so the picture can never belong to the song before or after.
+    private static let musicScript = """
+        on run argv
+            set wanted to item 1 of argv
+            set target to item 2 of argv
+            tell application id "com.apple.Music"
+                if not running then return "none"
+                set playingNow to current track
+                if (name of playingNow) is not wanted then return "none"
+                if (count of artworks of playingNow) is 0 then return "none"
+                set bytes to raw data of artwork 1 of playingNow
+            end tell
+            set handle to open for access (POSIX file target) with write permission
+            try
+                set eof handle to 0
+                write bytes to handle
+                close access handle
+            on error
+                close access handle
+                return "none"
+            end try
+            return "ok"
+        end run
+        """
+    private static func musicCover(_ track: NowPlaying) async throws -> Data? {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("notcher-cover-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let result = try await Command.run("/usr/bin/osascript", ["-e", musicScript, track.title, file.path], timeout: 6)
+        guard result.status == 0, result.text.trimmingCharacters(in: .whitespacesAndNewlines) == "ok",
+              let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > 0, size <= 12_000_000 else { return nil }
+        return try Data(contentsOf: file)
     }
     private static func download(_ url: URL) async throws -> Data? {
         var request = URLRequest(url: url, cachePolicy: .returnCacheDataElseLoad, timeoutInterval: 8)
@@ -88,7 +122,7 @@ struct ArtworkClient: Sendable {
             load(key: newKey, source: nil) { data }
             return
         }
-        guard embedded == nil, track.canRequestSpotifyArtwork else { return }
+        guard embedded == nil, track.canRequestSpotifyArtwork || track.isAppleMusic else { return }
         let remote = track.remoteArtworkURL?.absoluteString
         // The player corrected the address after the track changed: the earlier answer no longer counts.
         if let remote, remote != requestedSource, remote != shownSource {
@@ -152,5 +186,6 @@ extension NowPlaying {
         return url
     }
     var canRequestSpotifyArtwork: Bool { isSpotify || (bundleIdentifier.isEmpty && application.isEmpty) }
+    var isAppleMusic: Bool { bundleIdentifier == "com.apple.Music" }
     var isSpotify: Bool { bundleIdentifier == "com.spotify.client" || (bundleIdentifier.isEmpty && application.localizedCaseInsensitiveContains("spotify")) }
 }

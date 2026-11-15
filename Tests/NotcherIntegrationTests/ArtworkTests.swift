@@ -47,7 +47,8 @@ final class ArtworkTests: XCTestCase {
         })
         service.update(track("Old"))
         await Task.yield()
-        var next = track("New"); next.bundleIdentifier = "com.apple.Music"; next.application = "Music"
+        // A player Notcher asks no cover from: nothing may appear for it, least of all the previous track's.
+        var next = track("New"); next.bundleIdentifier = "org.videolan.vlc"; next.application = "VLC"
         service.update(next)
         try await Task.sleep(for: .milliseconds(150))
         XCTAssertNil(service.image)

@@ -80,6 +80,24 @@ public enum CompactStyle: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
     public var title: String { self == .info ? L("Date et heure") : L("Discret") }
 }
+/// How the clock widget draws the time.
+public enum ClockStyle: String, CaseIterable, Identifiable, Sendable {
+    case tall, stacked, classic
+    public var id: String { rawValue }
+    public var title: String {
+        switch self { case .tall: return L("Élancée"); case .stacked: return L("Empilée"); case .classic: return L("Classique") }
+    }
+}
+/// Sizes the tall clock: digits as high as the room they are given, squeezed sideways only as far as needed.
+public enum ClockFit {
+    /// The digits are drawn smaller and stretched upwards by this much: that is what makes them slender.
+    public static let stretch: CGFloat = 1.38
+    /// Sideways scale that makes text of `natural` width fit in `available`; never wider than drawn.
+    public static func squeeze(natural: CGFloat, available: CGFloat) -> CGFloat {
+        guard natural > 0, available > 0, natural.isFinite, available.isFinite else { return 1 }
+        return min(1, available / natural)
+    }
+}
 /// The panel always hangs from the top centre of its screen; only the lower edge and the sides move.
 public enum PanelGeometry {
     public static func frame(size: CGSize, topCenter: CGPoint) -> CGRect {
@@ -104,7 +122,8 @@ public enum PanelDismissal {
 public enum CompactPanel {
     public static func size(notchWidth: CGFloat, notchHeight: CGFloat, media: Bool, focus: Bool, activity: Bool, idleInfo: Bool = true, ambient: Bool = false, hovered: Bool = false) -> CGSize {
         // `ambient`: a state or an event shown with pictures only, which needs less room than a titled activity.
-        let wing: CGFloat = activity ? 126 : (media || focus) ? 92 : (idleInfo || ambient) ? 72 : 14
+        // Music alone only needs its cover on one side and its bars on the other.
+        let wing: CGFloat = activity ? 126 : focus ? 92 : ambient ? 72 : media ? 52 : idleInfo ? 72 : 14
         // A hovered notch swells a little to show it is ready for a click.
         return CGSize(width: notchWidth + wing * 2 + (hovered ? 14 : 0), height: notchHeight + (hovered ? 4 : 0))
     }

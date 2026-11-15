@@ -62,6 +62,15 @@ private final class NotchContainer: NSView {
         let frame = shapeFrame
         return CGRect(x: frame.minX - 2, y: frame.minY - 2, width: frame.width + 4, height: frame.height + 14).contains(point)
     }
+    /// The right wing of the closed notch while it shows the bars: resting there offers play/pause instead
+    /// of opening the panel, and a click there toggles playback.
+    private var playbackZone: CGRect? {
+        guard model.compactPlaybackVisible, !model.presentationExpanded, !model.permissionCardVisible else { return nil }
+        let frame = shapeFrame
+        let wing = max(0, (frame.width - 2 * model.targetShift - model.notchWidth) / 2) + 2 * model.targetShift
+        return CGRect(x: frame.maxX - wing, y: frame.minY - 2, width: wing + 2, height: frame.height + 14)
+    }
+    private func isOnPlayback(_ point: CGPoint) -> Bool { playbackZone?.contains(point) ?? false }
     /// Where the collapse button is drawn, in screen coordinates. Clicks there are handled before any view,
     /// so the panel can always be closed, whatever state the interface is in.
     private var collapseButtonFrame: CGRect {
@@ -71,7 +80,9 @@ private final class NotchContainer: NSView {
         return CGRect(x: right - side, y: top - side, width: side, height: side).insetBy(dx: -4, dy: -4)
     }
     /// Area actually drawn, in screen coordinates. The window may be larger while a transition runs.
-    private var shapeFrame: CGRect { PanelGeometry.frame(size: model.targetSize, topCenter: anchor) }
+    private var shapeFrame: CGRect { PanelGeometry.frame(size: model.targetSize, topCenter: CGPoint(x: anchor.x + model.targetShift, y: anchor.y)) }
+    /// The window stays centred on the notch: a shape drawn off-centre needs that much more room on both sides.
+    private func footprint(_ size: CGSize, shift: CGFloat) -> CGSize { CGSize(width: size.width + 2 * abs(shift), height: size.height) }
     private var screen: NSScreen? { NSScreen.screens.first { displayID($0) == model.preferences.screenID } ?? NSScreen.screens.first { $0.safeAreaInsets.top > 0 } ?? NSScreen.main ?? NSScreen.screens.first }
 
     init(model: AppModel) {
@@ -119,6 +130,14 @@ private final class NotchContainer: NSView {
             // The collapse button answers here, before SwiftUI: a blocked view or a lost sheet cannot disable it.
             if event.type == .leftMouseDown, self.model.expanded || self.model.presentationExpanded, self.collapseButtonFrame.contains(NSEvent.mouseLocation) {
                 self.forceCollapse()
+                return nil
+            }
+            // The question under the closed notch has buttons of its own.
+            if event.type == .leftMouseDown, self.model.permissionCardVisible, self.isOnNotch(NSEvent.mouseLocation) {
+                self.pointerMoved(click: false); return event
+            }
+            if event.type == .leftMouseDown, !self.model.expanded, self.isOnPlayback(NSEvent.mouseLocation) {
+                self.model.togglePlaybackFromNotch()
                 return nil
             }
             // Open on the press itself: no gesture recogniser, no dependence on which window has the focus.
@@ -177,27 +196,28 @@ private final class NotchContainer: NSView {
         let height = target.safeAreaInsets.top > 0 ? target.safeAreaInsets.top : 26
         if model.notchWidth != width { model.notchWidth = width }
         if model.notchHeight != height { model.notchHeight = height }
-        let destination = model.targetSize
+        let destination = model.targetSize, shift = model.targetShift
         let nextAnchor = CGPoint(x: target.frame.midX, y: target.frame.maxY)
         let moved = anchor != nextAnchor
         anchor = nextAnchor
-        let unchanged = model.shapeSize == destination && model.presentationExpanded == model.expanded
+        let unchanged = model.shapeSize == destination && model.shapeShift == shift && model.presentationExpanded == model.expanded
         if unchanged && !moved && settleTask != nil { return } // Repeated service updates must not restart a transition.
         guard animated, !unchanged, !moved, panel.isVisible, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
             settleTask?.cancel(); settleTask = nil; transition += 1
             var instant = Transaction(); instant.disablesAnimations = true
-            if !unchanged { withTransaction(instant) { model.shapeSize = destination; model.presentationExpanded = model.expanded } }
-            place(destination)
+            if !unchanged { withTransaction(instant) { model.shapeSize = destination; model.shapeShift = shift; model.presentationExpanded = model.expanded } }
+            place(footprint(destination, shift: shift))
             return
         }
         transition += 1
         let token = transition
         // The current window already holds the shape being drawn, including an interrupted transition.
-        place(PanelGeometry.envelope(panel.frame.size, PanelGeometry.envelope(destination, destination, margin: 28)))
+        let room = footprint(destination, shift: max(shift, model.shapeShift))
+        place(PanelGeometry.envelope(panel.frame.size, PanelGeometry.envelope(room, room, margin: 28)))
         let style = model.preferences.motionStyle
         let spring = model.expanded && !model.presentationExpanded ? style.opening : style.closing
         withAnimation(.spring(response: spring.response, dampingFraction: spring.damping), completionCriteria: .removed) {
-            model.shapeSize = destination; model.presentationExpanded = model.expanded
+            model.shapeSize = destination; model.shapeShift = shift; model.presentationExpanded = model.expanded
         } completion: { [weak self] in Task { @MainActor in self?.settle(token) } }
         // The completion is an optimisation; this bound guarantees the window never stays oversized.
         settleTask?.cancel()
@@ -208,7 +228,7 @@ private final class NotchContainer: NSView {
     private func settle(_ token: Int) {
         guard token == transition else { return }
         settleTask?.cancel(); settleTask = nil
-        place(model.shapeSize)
+        place(footprint(model.shapeSize, shift: model.shapeShift))
     }
     private func place(_ size: CGSize) {
         let frame = PanelGeometry.frame(size: PanelGeometry.envelope(size, size), topCenter: anchor)
@@ -231,7 +251,7 @@ private final class NotchContainer: NSView {
         // If the animation did not land for any reason, apply the closed state directly.
         Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(1600)) } catch { return }
-            guard let self, !self.model.expanded, self.model.presentationExpanded || self.model.shapeSize != self.model.targetSize else { return }
+            guard let self, !self.model.expanded, self.model.presentationExpanded || self.model.shapeSize != self.model.targetSize || self.model.shapeShift != self.model.targetShift else { return }
             self.updateGeometry(animated: false)
         }
     }
@@ -258,16 +278,21 @@ private final class NotchContainer: NSView {
             }
         } else { staleDrag = 0 }
         guard settleTask == nil, !geometryQueued, !contextMenuOpen else { return }
-        if model.presentationExpanded != model.expanded || model.shapeSize != model.targetSize {
+        if model.presentationExpanded != model.expanded || model.shapeSize != model.targetSize || model.shapeShift != model.targetShift {
             Self.log.error("Repaired: drawn panel out of step with its state (expanded \(self.model.expanded, privacy: .public))")
             updateGeometry(animated: false)
         }
-        else { place(model.shapeSize) }
+        else { place(footprint(model.shapeSize, shift: model.shapeShift)) }
         if !panel.isVisible { panel.orderFrontRegardless() }
     }
     /// Events macOS delivered to another app. On the top row of pixels the menu bar owns the pointer, even
     /// over this panel: a press there never reaches the local monitor, so it has to open the notch from here.
     private func outsideMouse(_ event: NSEvent) {
+        if model.permissionCardVisible, isOnNotch(NSEvent.mouseLocation) { mouse(event); return }
+        if event.type == .leftMouseDown, !contextMenuOpen, !model.expanded, isOnPlayback(NSEvent.mouseLocation) {
+            model.togglePlaybackFromNotch()
+            return
+        }
         if event.type == .leftMouseDown, !contextMenuOpen, !model.expanded, isOnNotch(NSEvent.mouseLocation) {
             hoverTask?.cancel(); hoverTask = nil; model.expand(); lastInside = true
             return
@@ -282,6 +307,8 @@ private final class NotchContainer: NSView {
         let point = NSEvent.mouseLocation
         // A transparent margin exists around the shape during transitions; only the shape counts.
         let inside = isOnNotch(point)
+        let onPlayback = inside && !drag && isOnPlayback(point)
+        if model.playbackHover != onPlayback { model.playbackHover = onPlayback }
         if drag && inside {
             model.expand(tab: .files); closeTask?.cancel(); return
         }
@@ -292,12 +319,14 @@ private final class NotchContainer: NSView {
                 model.hovering = true; Haptics.play(.alignment)
             }
             // Not only on entry: a pointer already resting on the notch must be able to open it too.
-            if !model.expanded && hoverArmed && hoverTask == nil && model.preferences.openMode == .hover {
+            if onPlayback || model.permissionCardVisible { hoverTask?.cancel(); hoverTask = nil }
+            else if !model.expanded && hoverArmed && hoverTask == nil && model.preferences.openMode == .hover {
                 hoverTask = Task { [weak self] in
                     do { try await Task.sleep(for: .milliseconds(120)) } catch { return }
                     guard let self else { return }
                     self.hoverTask = nil
-                    if self.hoverArmed, !self.model.expanded, self.isOnNotch(NSEvent.mouseLocation) { self.model.expand() }
+                    let point = NSEvent.mouseLocation
+                    if self.hoverArmed, !self.model.expanded, !self.model.permissionCardVisible, self.isOnNotch(point), !self.isOnPlayback(point) { self.model.expand() }
                 }
             }
         } else {

@@ -179,7 +179,7 @@ private struct AppearancePane: View {
             }
             SettingsGroup(title: "Onglets affichés", hint: "Clique pour masquer ou afficher") {
                 HStack(spacing: 8) {
-                    ForEach(NotchTab.allCases) { tab in tabChip(tab) }
+                    ForEach(NotchTab.allCases.filter { $0 != .agents || preferences.developerMode }) { tab in tabChip(tab) }
                     Spacer(minLength: 0)
                 }
             }
@@ -239,7 +239,7 @@ private struct NotchPreview: View {
         let value = open ? preferences.motionStyle.opening : preferences.motionStyle.closing
         return .spring(response: value.response, dampingFraction: value.damping)
     }
-    private var tabs: [NotchTab] { NotchTab.allCases.filter { $0 == .home || !preferences.hiddenTabs.contains($0.key) } }
+    private var tabs: [NotchTab] { NotchTab.allCases.filter { $0 == .home || (!preferences.hiddenTabs.contains($0.key) && ($0 != .agents || preferences.developerMode)) } }
     var body: some View {
         let size = open ? openSize : closedSize
         ZStack(alignment: .top) {
@@ -691,6 +691,8 @@ private struct ServicesPane: View {
     @Binding var error: String?
     var body: some View {
         VStack(alignment: .leading, spacing: 24) {
+            developerCard
+            if preferences.developerMode { agentsGroup.transition(.opacity.combined(with: .offset(y: -6))) }
             SettingsGroup(title: "Dans le notch") {
                 SettingsCard {
                     SettingRow(symbol: "music.note", title: "Lecture en cours", subtitle: "Morceau, pochette et commandes de Spotify, Music et des autres lecteurs.") {
@@ -700,9 +702,6 @@ private struct ServicesPane: View {
                         Picker("Libérer le notch après une pause", selection: $preferences.mediaRestMinutes) {
                             ForEach(MediaRest.choices, id: \.self) { Text(MediaRest.title(minutes: $0)).tag($0) }
                         }.labelsHidden().frame(width: 110)
-                    }
-                    SettingRow(symbol: "text.bubble", title: "Annoncer le morceau", subtitle: "Affiche brièvement le titre dans le notch fermé quand la chanson change.") {
-                        Switch(title: "Annoncer le morceau", isOn: $preferences.announceTrack)
                     }
                     SettingRow(symbol: "doc.on.clipboard", title: "Historique du presse-papiers", subtitle: "Les 30 derniers textes copiés, gardés en mémoire seulement. Désactiver efface l’historique.", divider: false) {
                         Switch(title: "Historique du presse-papiers", isOn: $preferences.clipboardEnabled)
@@ -721,6 +720,32 @@ private struct ServicesPane: View {
                     }
                 }
             }
+        }
+    }
+    /// The one switch that brings in everything made for people who code with AI agents.
+    private var developerCard: some View {
+        let on = preferences.developerMode
+        return HStack(spacing: 14) {
+            Image(systemName: "chevron.left.forwardslash.chevron.right").font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(on ? accent.contrastingText : accent)
+                .frame(width: 42, height: 42).background(on ? accent : accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Mode développeur").font(.system(size: 15, weight: .semibold))
+                Text("Ajoute l’onglet Agents, les quotas de Claude Code et de Codex, le suivi des sous-agents et les demandes de permission auxquelles tu réponds depuis le notch.")
+                    .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 12)
+            Toggle(L("Mode développeur"), isOn: Binding(get: { preferences.developerMode }, set: { value in
+                withAnimation(.snappy(duration: 0.25)) { preferences.developerMode = value }
+                Haptics.play(.levelChange)
+            })).labelsHidden().toggleStyle(.switch).accessibilityLabel(L("Mode développeur"))
+        }
+        .padding(16)
+        .background(on ? accent.opacity(0.08) : Theme.surface, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(on ? accent.opacity(0.45) : Theme.border, lineWidth: 1))
+    }
+    private var agentsGroup: some View {
+        Group {
             SettingsGroup(title: "Agents") {
                 SettingsCard {
                     SettingRow(symbol: "sparkles", title: "Claude Code", subtitle: agents.claudeStatus) {
@@ -733,6 +758,9 @@ private struct ServicesPane: View {
                                 catch let failure { error = failure.localizedDescription }
                             }.help("Installe ou retire le relais dans la barre d’état de Claude Code, en préservant la commande existante.")
                         }
+                    }
+                    SettingRow(symbol: "hand.raised", title: "Répondre aux permissions depuis le notch", subtitle: "Quand Claude Code ou Codex demande l’autorisation d’utiliser un outil, la question s’affiche sous le notch avec Autoriser et Refuser. Pour Codex, approuve une fois le hook avec /hooks dans Codex.") {
+                        Switch(title: "Répondre aux permissions depuis le notch", isOn: $preferences.agentApprovals)
                     }
                     SettingRow(symbol: "chevron.left.forwardslash.chevron.right", title: "Codex", subtitle: agents.codexStatus) {
                         Switch(title: "Codex", isOn: Binding(get: { preferences.codexEnabled }, set: { enabled in
@@ -782,7 +810,7 @@ private struct WidgetsPane: View {
             }
             SettingsGroup(title: "Ajouter", hint: layout.available.isEmpty ? "Tous les widgets sont déjà sur l’aperçu" : "Clique : le widget prend la première place libre") {
                 FlowRow(spacing: 8) {
-                    ForEach(layout.available) { widget in
+                    ForEach(layout.available.filter { $0 != .agents || preferences.developerMode }) { widget in
                         Button { change { if !$0.add(widget) { notice = "Plus de place libre : réduis ou retire d’abord un widget." } } } label: {
                             HStack(spacing: 6) {
                                 Image(systemName: widget.symbol).font(.system(size: 11))
@@ -792,6 +820,20 @@ private struct WidgetsPane: View {
                             .padding(.horizontal, 11).frame(height: 30).foregroundStyle(.white.opacity(0.85))
                             .background(Theme.surface, in: Capsule()).overlay(Capsule().strokeBorder(Theme.border)).contentShape(Capsule())
                         }.buttonStyle(PressStyle(scale: 0.96)).accessibilityLabel("Ajouter \(widget.title)")
+                    }
+                }
+            }
+            if layout.contains(.clock) {
+                SettingsGroup(title: "Horloge", hint: "Le widget que tu as placé sur l’aperçu") {
+                    SettingsCard {
+                        SettingRow(symbol: "textformat.size", title: "Style des chiffres", subtitle: "Élancée : de grands chiffres étroits sur toute la hauteur. Empilée : les heures au-dessus des minutes.") {
+                            Picker("Style des chiffres", selection: $preferences.clockStyle) {
+                                ForEach(ClockStyle.allCases) { Text($0.title).tag($0) }
+                            }.pickerStyle(.segmented).labelsHidden().frame(width: 250)
+                        }
+                        SettingRow(symbol: "paintpalette", title: "Minutes en couleur", subtitle: "Les minutes prennent la couleur d’accent.", divider: false) {
+                            Switch(title: "Minutes en couleur", isOn: $preferences.clockTwoTone)
+                        }
                     }
                 }
             }

@@ -11,11 +11,13 @@ struct NotchView: View {
         // In the notch window the controller animates `shapeSize`; the development preview has no controller.
         let size = followsWindow ? model.shapeSize : model.targetSize
         let shown = model.presentationExpanded
+        let shift = followsWindow ? model.shapeShift : model.targetShift
         VStack(spacing: 0) {
-            NotchHeader(model: model, width: size.width).frame(width: size.width, height: model.notchHeight)
+            NotchHeader(model: model, width: size.width, shift: shift).frame(width: size.width, height: model.notchHeight)
             VStack(spacing: 14) {
                 navigation.frame(height: 38)
-                page.frame(height: model.pageHeight)
+                // Clicks stop at the edges of the page: whatever a page draws past them can never cover the navigation.
+                page.frame(height: model.pageHeight).contentShape(Rectangle())
             }
             .padding(.horizontal, 32).padding(.top, 12).padding(.bottom, 20)
             .frame(width: model.expandedWidth)
@@ -37,9 +39,23 @@ struct NotchView: View {
                     .frame(height: AppModel.detailHeight).padding(.top, model.notchHeight - 3).transition(.opacity)
             }
         }
+        .overlay(alignment: .top) {
+            // Under the closed notch: Claude Code's question, answered without opening anything.
+            if !shown, !model.expanded, let pending = model.permission {
+                PermissionCard(pending: pending, waiting: model.agents.permissionRequests.count - 1) { model.agents.answer(pending.id, $0) }
+                    .frame(width: AppModel.permissionCard.width, height: AppModel.permissionCard.height)
+                    .padding(.top, model.notchHeight).transition(.opacity)
+            }
+        }
         .clipShape(NotchShape())
         .overlay(alignment: .bottom) {
-            if model.expanded, let toast = model.toast {
+            if model.expanded, shown, let pending = model.permission {
+                PermissionCard(pending: pending, waiting: model.agents.permissionRequests.count - 1) { model.agents.answer(pending.id, $0) }
+                    .frame(width: AppModel.permissionCard.width, height: AppModel.permissionCard.height)
+                    .background(Theme.raised, in: RoundedRectangle(cornerRadius: 18)).overlay(RoundedRectangle(cornerRadius: 18).strokeBorder(Theme.border))
+                    .shadow(color: .black.opacity(0.5), radius: 14, y: 4)
+                    .padding(.bottom, 14).transition(.opacity.combined(with: .offset(y: 8)))
+            } else if model.expanded, let toast = model.toast {
                 HStack(spacing: 10) {
                     Text(L(toast)).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center)
                     if let action = model.toastAction {
@@ -56,6 +72,8 @@ struct NotchView: View {
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.toast)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: model.permission)
+        .offset(x: shift)
         .frame(maxWidth: followsWindow ? .infinity : nil, maxHeight: followsWindow ? .infinity : nil, alignment: .top)
         .foregroundStyle(.white)
         .environment(\.notcherAccent, model.preferences.accentColor)
@@ -103,6 +121,72 @@ struct NotchView: View {
     }
 }
 
+/// An agent asks before using a tool: what it wants to do, and the ways to answer.
+struct PermissionCard: View {
+    @Environment(\.notcherAccent) private var accent
+    let pending: PendingPermission
+    /// Other questions queued behind this one.
+    let waiting: Int
+    var answer: (ClaudePermissionAnswer) -> Void
+    var body: some View {
+        let request = pending.request
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                mark(request.agent)
+                Text(L("%@ veut utiliser %@", request.agent == .codex ? "Codex" : "Claude", request.toolTitle)).font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                if let project = request.project { Text(project).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1).layoutPriority(-1) }
+                Spacer(minLength: 4)
+                if waiting > 0 {
+                    Text("+\(waiting)").font(.system(size: 10, weight: .semibold, design: .rounded)).foregroundStyle(.secondary)
+                        .padding(.horizontal, 6).frame(height: 18).background(.white.opacity(0.08), in: Capsule())
+                }
+                IconButton(symbol: "terminal", help: "Répondre dans le terminal", size: 24) { answer(.pass) }
+            }.frame(height: 24)
+            Text(request.summary.isEmpty ? (request.note ?? "") : request.summary)
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(.white.opacity(0.78)).lineLimit(2).truncationMode(.middle)
+                .frame(maxWidth: .infinity, minHeight: 28, alignment: .topLeading)
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(.white.opacity(0.055), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.border))
+                .help(request.note ?? request.summary)
+            HStack(spacing: 8) {
+                DecisionButton(title: "Refuser") { answer(.deny); Haptics.play(.alignment) }
+                DecisionButton(title: "Autoriser", primary: true) { answer(.allow); Haptics.play(.levelChange) }
+            }
+        }
+        // The shape flares out at the top: its body is narrower than its frame by that much on each side.
+        .padding(.horizontal, 28).padding(.top, 2).padding(.bottom, 16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityElement(children: .contain)
+    }
+    @ViewBuilder private func mark(_ agent: ClaudePermissionRequest.Agent) -> some View {
+        if agent == .claude, let icon = ClaudeMark.icon { Image(nsImage: icon).resizable().interpolation(.high).scaledToFit().frame(width: 18, height: 18) }
+        else {
+            Image(systemName: agent == .codex ? "chevron.left.forwardslash.chevron.right" : "asterisk").font(.system(size: 10, weight: .bold))
+                .foregroundStyle(agent == .codex ? accent : Theme.orange).frame(width: 18, height: 18)
+                .background((agent == .codex ? accent : Theme.orange).opacity(0.14), in: RoundedRectangle(cornerRadius: 5, style: .continuous))
+        }
+    }
+}
+/// The two answers share the width of the card, like the buttons of a macOS alert.
+private struct DecisionButton: View {
+    @Environment(\.notcherAccent) private var accent
+    let title: String
+    var primary = false
+    var action: () -> Void
+    @State private var hovering = false
+    var body: some View {
+        Button(action: action) {
+            Text(L(title)).font(.system(size: 12, weight: primary ? .semibold : .medium))
+                .foregroundStyle(primary ? accent.contrastingText : Color.white.opacity(0.9))
+                .frame(maxWidth: .infinity).frame(height: 30)
+                .background(primary ? accent.opacity(hovering ? 0.86 : 1) : Color.white.opacity(hovering ? 0.16 : 0.10), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                .contentShape(Rectangle())
+        }.buttonStyle(PressStyle(scale: 0.98)).onHover { hovering = $0 }
+            .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
 /// A green dot in the navigation while a newer version waits; it opens the settings, where it installs.
 private struct UpdateButton: View {
     @ObservedObject var updates: UpdateService
@@ -133,9 +217,15 @@ struct NotchHeader: View {
     @Environment(\.notcherAccent) private var accent
     @ObservedObject var model: AppModel
     let width: CGFloat
+    /// Half of what the right wing has over the left one.
+    var shift: CGFloat = 0
+    /// The shape flares out by this much at each end; nothing can be drawn in the flare.
+    static let ear: CGFloat = 16
     var body: some View {
-        let wing = max(0, (width - model.notchWidth) / 2)
+        let wing = max(0, (width - 2 * shift - model.notchWidth) / 2), rightWing = wing + 2 * shift
         let idle = model.preferences.compactStyle == .info || model.presentationExpanded
+        // Music alone: narrow wings, the cover and the bars each centred in theirs.
+        let slim = !model.presentationExpanded && model.compactPlaybackVisible
         return HStack(spacing: 0) {
                 HStack(spacing: 7) {
                     if let activity = model.activity {
@@ -150,7 +240,7 @@ struct NotchHeader: View {
                 }
                 .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .leading : .center)
                 .padding(.leading, model.presentationExpanded ? 34 : 16)
-                .padding(.trailing, model.presentationExpanded ? 10 : 16)
+                .padding(.trailing, model.presentationExpanded ? 10 : slim ? 0 : 16)
                 .frame(width: wing)
                 Color.clear.frame(width: model.notchWidth, height: 1)
                 HStack(spacing: 8) {
@@ -167,11 +257,15 @@ struct NotchHeader: View {
                             .modifier(PopIn(active: true, delay: 0.18))
                     } else if let ambient = model.ambient, !model.presentationExpanded, model.activity == nil {
                         AmbientTrailing(ambient: ambient)
-                    } else { CompactStatus(media: model.media, focus: model.focus, idle: idle) }
+                    } else {
+                        // Alone in its wing, the indicator takes the same room as the cover opposite and sits in its middle.
+                        CompactStatus(media: model.media, focus: model.focus, idle: idle, hovered: model.playbackHover && slim,
+                                      barsWidth: slim ? max(24, wing - Self.ear) : 24, volume: slim && shift > 0 ? model.musicVolume : nil)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .trailing : .leading)
-                .padding(.leading, 10).padding(.trailing, model.presentationExpanded ? 34 : 24)
-                .frame(width: wing)
+                .padding(.leading, slim ? 0 : 10).padding(.trailing, model.presentationExpanded ? 34 : slim ? Self.ear : 24)
+                .frame(width: rightWing)
         }.font(.system(size: 12))
         .frame(maxHeight: .infinity).clipped()
         .contentShape(Rectangle())
@@ -237,7 +331,7 @@ private struct CompactMedia: View {
         if let track = media.compactTrack {
             let side = min(22, max(16, height - 8))
             Group {
-                if let artwork = media.artwork { Image(nsImage: artwork).resizable().scaledToFill() }
+                if let artwork = media.artwork { Image(nsImage: artwork).resizable().scaledToFill().allowsHitTesting(false) }
                 else { Image(systemName: "music.note").foregroundStyle(accent).frame(maxWidth: .infinity, maxHeight: .infinity).background(accent.opacity(0.12)) }
             }.frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: 5))
                 .animation(.easeOut(duration: 0.25), value: media.artwork)
@@ -254,14 +348,36 @@ private struct CompactStatus: View {
     @ObservedObject var media: MediaService
     @ObservedObject var focus: FocusService
     let idle: Bool
+    let hovered: Bool
+    var barsWidth: CGFloat = 24
+    var volume: VolumeReadout? = nil
     var body: some View {
         if focus.clock.deadline != nil {
             Image(systemName: "timer").foregroundStyle(accent)
             Text(clockString(focus.remaining)).font(.system(size: 10, weight: .medium, design: .monospaced)).foregroundStyle(accent)
         } else if let track = media.compactTrack {
-            PlaybackIndicator(playing: track.playing).frame(width: 18, height: 16).foregroundStyle(accent)
-            TimelineView(.periodic(from: .now, by: track.playing ? 1 : 60)) { _ in
-                Text(clockString(media.elapsed)).font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
+            // Under the pointer the bars step back, blurred but still moving, behind a play/pause button.
+            ZStack {
+                PlaybackIndicator(playing: track.playing).foregroundStyle(media.tint ?? accent)
+                    .blur(radius: hovered ? 1.8 : 0).opacity(hovered ? 0.45 : 1)
+                if hovered {
+                    Image(systemName: track.playing ? "pause.fill" : "play.fill").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                        .contentTransition(.symbolEffect(.replace)).transition(.opacity.combined(with: .scale(scale: 0.6)))
+                }
+            }
+            .frame(width: barsWidth, height: 18)
+            .animation(.easeOut(duration: 0.16), value: hovered)
+            .animation(.easeOut(duration: 0.3), value: media.tint)
+            if let volume {
+                // The volume moved while music plays: its level, small, in the part of the wing that just grew.
+                Group {
+                    if volume.muted { Image(systemName: "speaker.slash.fill").font(.system(size: 9)) }
+                    else { Text("\(Int((volume.level * 100).rounded()))").font(.system(size: 10, weight: .medium, design: .monospaced)).contentTransition(.numericText(value: volume.level)) }
+                }.foregroundStyle(.white.opacity(0.75)).frame(width: 18, alignment: .trailing)
+                Capsule().fill(.white.opacity(0.14)).frame(width: 34, height: 3)
+                    .overlay(alignment: .leading) { Capsule().fill(media.tint ?? accent).frame(width: 34 * min(1, max(0, volume.level)), height: 3) }
+                    .animation(.easeOut(duration: 0.1), value: volume.level)
+                    .accessibilityLabel(L("Volume")).accessibilityValue("\(Int((volume.level * 100).rounded())) %")
             }
         } else if idle {
             TimelineView(.periodic(from: .now, by: 60)) { context in
