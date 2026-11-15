@@ -1,15 +1,14 @@
 #!/bin/bash
 # Films the README demo from the app itself: a scripted tour on a staged MacBook screen, with made-up content.
-# Output, per language: docs/media[/fr]/demo.mp4 (60 fps), poster.png (the README picture that links to
-# the video) and screenshots.
+# Output, per language: docs/media[/fr]/demo.mp4 (60 fps), demo.gif (33 fps, plays inline in the README)
+# and screenshots.
 #
-# Needs ffmpeg and ImageMagick (brew install ffmpeg imagemagick) and the Screen Recording permission for the terminal that runs it.
+# Needs ffmpeg (brew install ffmpeg) and the Screen Recording permission for the terminal that runs it.
 # The recording window is parked off the edge of the screen: nothing appears, nothing needs closing.
 # Your own Notcher data is never read: the app runs on a scratch folder and its own preferences.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required: brew install ffmpeg" >&2; exit 1; }
-command -v magick >/dev/null || { echo "ImageMagick is required: brew install imagemagick" >&2; exit 1; }
 ./Scripts/build.sh release >/dev/null
 for language in en fr; do
     destination="$PWD/docs/media"; [ "$language" = en ] || destination="$destination/$language"
@@ -26,9 +25,11 @@ for language in en fr; do
     for still in screen overview shelf notes agents; do
         [ -f "$scratch/out/$still.png" ] && ffmpeg -v error -y -i "$scratch/out/$still.png" -vf "scale=1600:-2:flags=lanczos" "$destination/$still.png"
     done
-    # The whole staged screen with a play button: what the README shows, linked to the video.
-    magick "$destination/screen.png" -fill "rgba(0,0,0,0.55)" -stroke "rgba(255,255,255,0.85)" -strokewidth 3 -draw "circle 800,700 800,772" \
-        -fill white -stroke none -draw "polygon 778,662 778,738 842,700" "$destination/poster.png"
+    # A GIF plays by itself in the README, where GitHub will not embed a video file from the repository.
+    # 100/3 frames a second is the fastest rate a GIF can hold exactly (3 hundredths of a second a frame).
+    ffmpeg -v error -y -i "$scratch/out/raw.mov" \
+        -vf "fps=100/3,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=112:stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+        "$destination/demo.gif"
     rm -rf "$scratch"; trap - EXIT
 done
 ls -lh docs/media docs/media/fr
