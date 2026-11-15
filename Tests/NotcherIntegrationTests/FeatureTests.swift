@@ -115,3 +115,87 @@ final class FeatureTests: XCTestCase {
         track.artworkURL = "http://"; XCTAssertNil(track.remoteArtworkURL)
     }
 }
+
+/// Discreet means a bare closed notch: a low battery or a coming meeting stays out of it.
+final class DiscreetNotchTests: XCTestCase {
+    override func setUp() {
+        setenv("NOTCHER_DATA_DIR", FileManager.default.temporaryDirectory.appendingPathComponent("notcher-integration-support-\(getpid())").path, 1)
+    }
+    @MainActor func testDiscreetHidesLastingStates() throws {
+        let name = "notcher-discreet-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        defer { defaults.removePersistentDomain(forName: name) }
+        let model = AppModel(preferences: Preferences(defaults: defaults))
+        model.system.battery = 14; model.system.charging = false
+        model.preferences.compactStyle = .info
+        XCTAssertEqual(model.currentAmbient()?.trailing, "14 %")
+        model.preferences.compactStyle = .minimal
+        XCTAssertNil(model.currentAmbient())
+    }
+}
+
+/// Everything about AI agents belongs to developer mode.
+final class DeveloperModeTests: XCTestCase {
+    override func setUp() {
+        setenv("NOTCHER_DATA_DIR", FileManager.default.temporaryDirectory.appendingPathComponent("notcher-integration-support-\(getpid())").path, 1)
+    }
+    @MainActor private func model(developer: Bool) throws -> AppModel {
+        let name = "notcher-developer-\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: name))
+        addTeardownBlock { defaults.removePersistentDomain(forName: name) }
+        let preferences = Preferences(defaults: defaults)
+        preferences.developerMode = developer
+        return AppModel(preferences: preferences)
+    }
+    @MainActor func testAgentsOnlyExistInDeveloperMode() throws {
+        let plain = try model(developer: false)
+        XCTAssertFalse(plain.visibleTabs.contains(.agents))
+        plain.agents.receive(ClaudeEvent(kind: .prompt, session: "s"))
+        plain.agents.receive(ClaudeEvent(kind: .subagentStart, session: "s", agent: "a", agentType: "Explore"))
+        XCTAssertEqual(plain.agents.claudeWorking, 0)
+        XCTAssertTrue(plain.agents.subagents.isEmpty)
+        let developer = try model(developer: true)
+        XCTAssertTrue(developer.visibleTabs.contains(.agents))
+        developer.agents.receive(ClaudeEvent(kind: .prompt, session: "s"))
+        developer.agents.receive(ClaudeEvent(kind: .subagentStart, session: "s", agent: "a", agentType: "Explore"))
+        XCTAssertEqual(developer.agents.claudeWorking, 1)
+        XCTAssertEqual(developer.agents.subagents.map(\.type), ["Explore"])
+    }
+    /// The hook and the app talk over a real socket: allow, a question handed back, an app that is not there.
+    @MainActor func testPermissionQuestionTravelsToTheAppAndBack() async throws {
+        let path = "/tmp/notcher-test-\(getpid())-\(UInt32.random(in: 0...99999)).sock"
+        let request = ClaudePermissionRequest(session: "s", tool: "Bash", summary: "ls", project: "shop")
+        XCTAssertNil(PermissionChannel.ask(request, path: path), "Nobody listening: Claude Code keeps the question")
+        let server = PermissionServer()
+        try server.start(path: path)
+        defer { server.stop() }
+        var received: [ClaudePermissionRequest] = []
+        for answer in [ClaudePermissionAnswer.allow, .deny, .pass] {
+            server.onRequest = { id, value in received.append(value); server.reply(id, answer) }
+            let reply = await Task.detached { PermissionChannel.ask(request, path: path) }.value
+            XCTAssertEqual(reply, answer)
+        }
+        XCTAssertEqual(received, [request, request, request])
+        // An app that quits with a question open hands it back.
+        server.onRequest = { _, _ in server.stop() }
+        let abandoned = await Task.detached { PermissionChannel.ask(request, path: path) }.value
+        XCTAssertNil(abandoned)
+    }
+}
+
+final class ClockWidgetTests: XCTestCase {
+    /// The hour is two bare digits on the Mac's own clock: formatted alone, French would add its "h".
+    func testClockDigitsAreBareAndFollowThe12Or24HourSetting() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try XCTUnwrap(TimeZone(identifier: "Europe/Paris"))
+        func date(_ hour: Int, _ minute: Int) throws -> Date { try XCTUnwrap(calendar.date(from: DateComponents(year: 2026, month: 11, day: 15, hour: hour, minute: minute))) }
+        let french = Locale(identifier: "fr_FR"), american = Locale(identifier: "en_US")
+        XCTAssertTrue(try HomeWidgetView.clockDigits(of: date(16, 5), calendar: calendar, locale: french) == ("16", "05"))
+        XCTAssertTrue(try HomeWidgetView.clockDigits(of: date(0, 0), calendar: calendar, locale: french) == ("00", "00"))
+        XCTAssertTrue(try HomeWidgetView.clockDigits(of: date(16, 5), calendar: calendar, locale: american) == ("04", "05"))
+        XCTAssertTrue(try HomeWidgetView.clockDigits(of: date(0, 30), calendar: calendar, locale: american) == ("12", "30"))
+        XCTAssertEqual(ClockFit.squeeze(natural: 200, available: 100), 0.5)
+        XCTAssertEqual(ClockFit.squeeze(natural: 50, available: 100), 1, "Digits are never widened")
+        XCTAssertEqual(ClockFit.squeeze(natural: 0, available: 100), 1)
+    }
+}

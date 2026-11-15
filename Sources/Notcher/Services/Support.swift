@@ -5,6 +5,8 @@ import Foundation
 enum AppPaths {
     static let support: URL = {
         if let override = ProcessInfo.processInfo.environment["NOTCHER_DATA_DIR"] { return URL(fileURLWithPath: override, isDirectory: true) }
+        // Under test, never the user's own folder: a test that forgets to name one would otherwise rewrite real files.
+        if NSClassFromString("XCTestCase") != nil { return FileManager.default.temporaryDirectory.appendingPathComponent("notcher-tests-\(getpid())", isDirectory: true) }
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Notcher", isDirectory: true)
     }()
     static let integrations = support.appendingPathComponent("Integrations", isDirectory: true)

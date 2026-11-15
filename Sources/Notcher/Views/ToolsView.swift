@@ -37,7 +37,7 @@ struct ToolsView: View {
                 case .prompter: PrompterView(notes: model.notes)
                 case .convert: ConverterView(model: model)
                 }
-            }.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }.frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
         }.onChange(of: model.toolTab) { _, value in if value != .mirror { model.camera.stop() } }
             .onDisappear { model.camera.stop(); model.bluetooth.cancel() }
     }
@@ -254,35 +254,47 @@ struct PrompterView: View {
     @Environment(\.notcherPanelActive) private var panelActive
     @Environment(\.notcherAccent) private var accent
     @ObservedObject var notes: NotesService
-    @State private var playing = false
-    @State private var offset: CGFloat = 0
+    @State private var scroll = PrompterScroll()
     @State private var speed: Double = 22
     @State private var mirrored = false
     @State private var textHeight: CGFloat = 0
     var body: some View {
+        let text = notes.selected?.text ?? ""
         VStack(spacing: 12) {
             HStack {
                 Eyebrow(text: "Prompteur")
                 Spacer()
                 Toggle("Miroir", isOn: $mirrored).toggleStyle(.switch).controlSize(.mini).font(.system(size: 10))
-                IconButton(symbol: "arrow.counterclockwise", help: "Revenir au début") { offset = 0; playing = false }
-                IconButton(symbol: playing ? "pause.fill" : "play.fill", help: "Démarrer ou arrêter le prompteur", tint: accent) { playing.toggle() }
+                IconButton(symbol: "arrow.counterclockwise", help: "Revenir au début") { scroll.reset() }
+                IconButton(symbol: scroll.playing ? "pause.fill" : "play.fill", help: "Démarrer ou arrêter le prompteur", tint: accent) { scroll.toggle() }
+                    .disabled(!scroll.canPlay)
             }
             GeometryReader { geo in
-                Text(notes.selected?.text ?? "")
-                    .font(.system(size: 28, weight: .medium)).lineSpacing(12).frame(width: geo.size.width - 48, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                Text(text)
+                    .font(.system(size: 28, weight: .medium)).lineSpacing(12).frame(width: max(1, geo.size.width - 48), alignment: .leading).fixedSize(horizontal: false, vertical: true)
                     .background(GeometryReader { size in Color.clear.onAppear { textHeight = size.size.height }.onChange(of: size.size.height) { _, height in textHeight = height } })
-                    .padding(24).offset(y: -offset).scaleEffect(x: mirrored ? -1 : 1, y: 1)
-            }.clipped().background(Theme.surface, in: RoundedRectangle(cornerRadius: 16))
+                    .padding(24).offset(y: -scroll.offset).scaleEffect(x: mirrored ? -1 : 1, y: 1)
+                    .onAppear { scroll.measure(contentHeight: textHeight, viewport: geo.size.height) }
+                    .onChange(of: textHeight) { _, height in scroll.measure(contentHeight: height, viewport: geo.size.height) }
+                    .onChange(of: geo.size.height) { _, height in scroll.measure(contentHeight: textHeight, viewport: height) }
+            }
+            .clipped()
+            // The text is far taller than its window and only hidden by the clip. Left clickable, it would
+            // lie unseen over the rest of the panel as it scrolls and take every click meant for it.
+            .allowsHitTesting(false)
+            .background(Theme.surface, in: RoundedRectangle(cornerRadius: 16))
+            .overlay { if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { Text("La fiche sélectionnée est vide. Écris ton texte dans l’onglet Texte.").font(.system(size: 11)).foregroundStyle(Theme.muted).allowsHitTesting(false) } }
             HStack { Text("Vitesse"); Slider(value: $speed, in: 8...70).frame(width: 150); Spacer(); Text("\(Int(speed)) px/s") }.font(.system(size: 10)).foregroundStyle(.secondary)
-        }.onChange(of: panelActive) { _, active in if !active { playing = false } }
+        }.onChange(of: panelActive) { _, active in if !active { scroll.pause() } }
         // Runs only while scrolling: a permanent 30 Hz timer kept firing with the prompter stopped and the notch closed.
-        .task(id: playing && panelActive) {
-            guard playing && panelActive else { return }
+        .task(id: scroll.playing && panelActive) {
+            guard scroll.playing && panelActive else { return }
+            var last = Date()
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .milliseconds(33)) } catch { return }
-                offset += speed / 30
-                if offset >= textHeight + 24 { playing = false }
+                // Real elapsed time: a busy moment makes the text jump a little, never slow down.
+                let now = Date()
+                scroll.advance(by: speed * min(0.25, now.timeIntervalSince(last))); last = now
             }
         }
     }

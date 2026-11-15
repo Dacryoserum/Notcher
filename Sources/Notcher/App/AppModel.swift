@@ -50,6 +50,10 @@ struct NotchActivity: Equatable {
     var markColor: Color? = nil
     var pictureOnly: Bool { title.isEmpty }
 }
+struct VolumeReadout: Equatable {
+    var level: Double
+    var muted: Bool
+}
 struct ToastAction {
     let title: String
     let run: () -> Void
@@ -115,7 +119,32 @@ struct NotchAmbient: Equatable {
     func endAllDialogs() { if !openDialogs.isEmpty { openDialogs = [] } }
     /// Pointer resting on the closed notch in "hover then click" mode.
     @Published var hovering = false
-    private var announcedTrack: NowPlaying.ArtworkKey?
+    /// Pointer resting on the bars of the closed notch: they turn into a play/pause button.
+    @Published var playbackHover = false
+    /// The closed notch shows the cover and the bars, and nothing else is using its right wing.
+    var compactPlaybackVisible: Bool {
+        !expanded && activity == nil && ambient == nil && focus.clock.deadline == nil && media.compactTrack != nil
+    }
+    /// The volume just changed while the notch shows music: its right wing grows to hold the level.
+    @Published private(set) var musicVolume: VolumeReadout?
+    private var musicVolumeTask: Task<Void, Never>?
+    static let volumeWing: CGFloat = 74
+    var musicVolumeVisible: Bool { musicVolume != nil && compactPlaybackVisible && !permissionCardVisible }
+    /// How far the closed shape sits to the right of the notch's centre: only its right wing grows for the volume.
+    var targetShift: CGFloat { musicVolumeVisible ? Self.volumeWing / 2 : 0 }
+    /// Shift currently drawn; animated by the controller together with `shapeSize`.
+    @Published var shapeShift: CGFloat = 0
+    private func showMusicVolume(_ value: VolumeReadout) {
+        musicVolumeTask?.cancel(); musicVolume = value
+        musicVolumeTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(1.6)); self?.musicVolume = nil } catch {} }
+    }
+    private var lastPlaybackToggle = Date.distantPast
+    /// A click on the bars. One press can reach the app by two routes; only the first one counts.
+    func togglePlaybackFromNotch() {
+        guard compactPlaybackVisible, Date().timeIntervalSince(lastPlaybackToggle) > 0.25 else { return }
+        lastPlaybackToggle = Date()
+        media.command("toggle"); Haptics.play(.levelChange)
+    }
     var onGeometryChange: (() -> Void)?
     var openSettings: (() -> Void)?
     var openPanel: (() -> Void)?
@@ -133,15 +162,24 @@ struct NotchAmbient: Equatable {
     var targetSize: CGSize { CGSize(width: width, height: height) }
     /// Height of the strip under the closed notch that holds an activity's details.
     static let detailHeight: CGFloat = 26
-    var visibleTabs: [NotchTab] { NotchTab.allCases.filter { $0 == .home || !preferences.hiddenTabs.contains($0.key) } }
+    var visibleTabs: [NotchTab] { NotchTab.allCases.filter { $0 == .home || (!preferences.hiddenTabs.contains($0.key) && ($0 != .agents || preferences.developerMode)) } }
     var collapsedWidth: CGFloat { collapsedSize.width }
-    var width: CGFloat { expanded ? expandedWidth : collapsedWidth }
-    var height: CGFloat { expanded ? notchHeight + pageHeight + 84 : collapsedSize.height + (activity?.details.isEmpty == false ? Self.detailHeight : 0) }
+    var width: CGFloat { expanded ? expandedWidth : max(collapsedWidth + (musicVolumeVisible ? Self.volumeWing : 0), permissionCardVisible ? Self.permissionCard.width : 0) }
+    var height: CGFloat {
+        if expanded { return notchHeight + pageHeight + 84 }
+        return collapsedSize.height + (activity?.details.isEmpty == false ? Self.detailHeight : 0) + (permissionCardVisible ? Self.permissionCard.height : 0)
+    }
+    /// The question Claude Code is waiting on; the closed notch grows a card under it to answer.
+    var permission: PendingPermission? { preferences.developerMode ? agents.permissionRequests.first : nil }
+    var permissionCardVisible: Bool { !expanded && permission != nil }
+    static let permissionCard = CGSize(width: 460, height: 140)
 
     func start() {
-        agents.onLimit = { [weak self] title in self?.showActivity(.init(symbol: "sparkles", title: title, color: .orange), seconds: 6) }
+        agents.onLimit = { [weak self] title in guard self?.preferences.developerMode == true else { return }; self?.showActivity(.init(symbol: "sparkles", title: title, color: .orange), seconds: 6) }
         system.onVolumeChange = { [weak self] volume, muted in
             guard let self, self.preferences.showHUD else { return }
+            // Turning the volume while music plays is about the music: the level joins the cover and the bars.
+            if self.compactPlaybackVisible && !self.permissionCardVisible { self.showMusicVolume(VolumeReadout(level: muted ? 0 : volume, muted: muted)); return }
             let symbol = muted || volume <= 0 ? "speaker.slash.fill" : volume < 0.34 ? "speaker.wave.1.fill" : volume < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
             self.showActivity(.init(symbol: symbol, title: muted ? "Silence" : "Volume", value: muted ? 0 : volume), seconds: 1.6)
         }
@@ -151,7 +189,7 @@ struct NotchAmbient: Equatable {
             self.showActivity(.init(symbol: charging ? "bolt.fill" : "battery.75percent", title: charging ? "En charge" : "Sur batterie", value: level), seconds: 3)
         }
         agents.onClaudeFinished = { [weak self] in
-            guard let self, self.preferences.showHUD else { return }
+            guard let self, self.preferences.showHUD, self.preferences.developerMode else { return }
             self.showActivity(.init(symbol: "asterisk", title: "", color: Theme.orange, artwork: ClaudeMark.icon, mark: "checkmark.circle.fill", markColor: Theme.green), seconds: 3.5)
             Haptics.play(.levelChange)
         }
@@ -160,15 +198,6 @@ struct NotchAmbient: Equatable {
             self.showActivity(.init(symbol: "doc.fill", title: "", artwork: DownloadWatcher.icon(for: path), mark: "arrow.down.circle.fill"), seconds: 3.5)
         }
         system.onHeadphones = { [weak self] name in self?.announceHeadphones(name) }
-        // A new song is named in the closed notch for a moment; the first one seen at launch is not news.
-        media.$track.sink { [weak self] track in
-            guard let self else { return }
-            let key = track?.artworkKey
-            defer { if key != nil { self.announcedTrack = key } }
-            guard let track, let previous = self.announcedTrack, previous != key, track.playing,
-                  !self.expanded, self.preferences.announceTrack, !track.title.isEmpty else { return }
-            self.showActivity(.init(symbol: "music.note", title: track.title), seconds: 3)
-        }.store(in: &subscriptions)
         preferences.$mediaRestMinutes.sink { [weak self] value in self?.media.restMinutes = value }.store(in: &subscriptions)
         media.$resting.dropFirst().removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         $hovering.dropFirst().removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
@@ -183,6 +212,20 @@ struct NotchAmbient: Equatable {
             self.tab = .home
         }.store(in: &subscriptions)
         preferences.$mediaEnabled.sink { [weak self] value in self?.media.setEnabled(value) }.store(in: &subscriptions)
+        agents.onPermissionRequest = { Haptics.play(.levelChange) }
+        // The card under the closed notch follows the list of open questions.
+        agents.$permissionRequests.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in
+            self?.objectWillChange.send(); self?.onGeometryChange?()
+        }.store(in: &subscriptions)
+        preferences.$agentApprovals.dropFirst().sink { [weak self] value in if !value { self?.agents.releasePermissions() } }.store(in: &subscriptions)
+        preferences.$developerMode.dropFirst().removeDuplicates().sink { [weak self] value in
+            guard let self, !value else { return }
+            self.agents.silence()
+            if self.tab == .agents { self.tab = .home }
+            // The quotas widget leaves the overview with the mode that gives it something to show.
+            var layout = self.preferences.homeLayout
+            if layout.remove(.agents) { self.preferences.homeLayout = layout }
+        }.store(in: &subscriptions)
         preferences.$screenID.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         preferences.$panelSize.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         preferences.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &subscriptions)
@@ -194,6 +237,7 @@ struct NotchAmbient: Equatable {
             self?.onGeometryChange?()
         }.store(in: &subscriptions)
         $activity.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
+        $musicVolume.map { $0 != nil }.removeDuplicates().dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         media.$track.map { $0 != nil }.removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         focus.$clock.map { $0.deadline != nil }.removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         // Published values change after their publisher fires: the state is recomputed on the next turn of the run loop.
@@ -203,7 +247,7 @@ struct NotchAmbient: Equatable {
             media.$resting.map { _ in }.eraseToAnyPublisher(), focus.$clock.map { _ in }.eraseToAnyPublisher(),
             calendar.$events.map { _ in }.eraseToAnyPublisher(), system.$battery.map { _ in }.eraseToAnyPublisher(),
             system.$charging.map { _ in }.eraseToAnyPublisher(), system.$awake.map { _ in }.eraseToAnyPublisher(),
-            preferences.$showHUD.map { _ in }.eraseToAnyPublisher()
+            preferences.$showHUD.map { _ in }.eraseToAnyPublisher(), preferences.$developerMode.map { _ in }.eraseToAnyPublisher(), preferences.$compactStyle.map { _ in }.eraseToAnyPublisher()
         ]
         Publishers.MergeMany(sources).receive(on: RunLoop.main).sink { [weak self] in self?.refreshAmbient() }.store(in: &subscriptions)
         agents.$claudePromptAt.sink { [weak self] _ in
@@ -272,11 +316,13 @@ struct NotchAmbient: Equatable {
     /// timer and the player, which draw themselves.
     func currentAmbient(now: Date = Date()) -> NotchAmbient? {
         guard preferences.showHUD else { return nil }
-        if agents.claudeWaiting > 0 {
+        if preferences.developerMode, agents.claudeWaiting > 0 {
             return NotchAmbient(symbol: "asterisk", artwork: ClaudeMark.icon, color: Theme.orange, mark: "hand.raised.fill", motion: .pulsing)
         }
+        // Discreet keeps the closed notch bare: only a request that blocks work is worth breaking the silence.
+        if preferences.compactStyle == .minimal { return nil }
         if focus.clock.deadline != nil { return nil }
-        if agents.claudeWorking > 0, let asked = agents.claudePromptAt, now.timeIntervalSince(asked) < Self.claudeAnswerDisplay {
+        if preferences.developerMode, agents.claudeWorking > 0, let asked = agents.claudePromptAt, now.timeIntervalSince(asked) < Self.claudeAnswerDisplay {
             let quota = agents.claude.flatMap { usage in usage.isStale(at: now) ? nil : usage.windows.first { $0.id == "five_hour" && !$0.isExpired(at: now) } }
             return NotchAmbient(symbol: "asterisk", artwork: ClaudeMark.icon, color: Theme.orange,
                                 trailing: quota.map { "\(Int($0.usedPercent.rounded())) %" }, mark: "ellipsis", motion: .breathing)

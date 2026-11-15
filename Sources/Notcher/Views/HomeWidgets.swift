@@ -4,6 +4,10 @@ import NotcherCore
 /// Draws one widget of the overview in the form that suits the space its cells give it.
 /// A single cell is roughly 68 × 71 pt; every widget has something useful to show from its minimum size up.
 struct HomeWidgetView: View {
+    /// The clock's two pairs of digits; here so that tests can reach them.
+    static func clockDigits(of date: Date, calendar: Calendar = .current, locale: Locale = .current) -> (String, String) {
+        ClockWidget.digits(of: date, calendar: calendar, locale: locale)
+    }
     @ObservedObject var model: AppModel
     let widget: HomeWidget
     let size: CGSize
@@ -23,7 +27,7 @@ struct HomeWidgetView: View {
         case .files: FilesWidget(model: model, shelf: model.shelf, size: size)
         case .battery: BatteryWidget(system: model.system, size: size)
         case .agents: AgentsWidget(agents: model.agents, flat: flat) { model.tab = .agents }
-        case .clock: ClockWidget(size: size)
+        case .clock: ClockWidget(size: size, style: model.preferences.clockStyle, twoTone: model.preferences.clockTwoTone)
         case .awake: AwakeWidget(system: model.system, size: size)
         }
     }
@@ -380,13 +384,80 @@ private struct AgentsWidget: View {
     }
 }
 
+/// Digits as tall as the room they get: a compressed face, stretched upwards, squeezed sideways only if it must.
+private struct TallDigits: View {
+    let parts: [(text: String, color: Color)]
+    let size: CGSize
+    var body: some View {
+        // Sized from the face's own measurements, so the digits fill the height exactly whatever macOS draws them with.
+        let reference = NSFont.systemFont(ofSize: 100, weight: .medium, width: .compressed)
+        let fontSize = max(8, size.height * 0.94 / (reference.capHeight / 100 * ClockFit.stretch))
+        let font = NSFont.systemFont(ofSize: fontSize, weight: .medium, width: .compressed)
+        let natural = (parts.map(\.text).joined() as NSString).size(withAttributes: [.font: font]).width
+        let squeeze = ClockFit.squeeze(natural: natural, available: size.width)
+        // A line of text keeps room under the baseline that digits never use: lift them back to the middle.
+        let lift = ((font.ascender + font.descender) / 2 - font.capHeight / 2) * ClockFit.stretch
+        parts.reduce(Text("")) { $0 + Text($1.text).foregroundColor($1.color) }
+            .font(Font(font)).lineLimit(1).fixedSize()
+            .scaleEffect(x: squeeze, y: ClockFit.stretch)
+            .offset(y: -lift)
+            .frame(width: size.width, height: size.height)
+            // Stretched text is larger than its frame: it must never take a click meant for a neighbour.
+            .allowsHitTesting(false)
+    }
+}
 private struct ClockWidget: View {
     @Environment(\.notcherAccent) private var accent
     let size: CGSize
+    var style = ClockStyle.classic
+    var twoTone = true
     var body: some View {
+        if style == .classic || size.height < 60 || size.width < 60 { classic } else { tall }
+    }
+    private var tall: some View {
+        let padding: CGFloat = size.height < 110 ? 8 : 12
+        let inner = CGSize(width: max(1, size.width - padding * 2 - 4), height: max(1, size.height - padding * 2))
+        // The date only appears when it costs the digits little.
+        let dated = inner.height >= 150
+        let room = CGSize(width: inner.width, height: inner.height - (dated ? 18 : 0))
+        return Card(padding: padding) {
+            TimelineView(.everyMinute) { context in
+                let (hour, minute) = Self.digits(of: context.date)
+                let minuteColor = twoTone ? accent : Color.white
+                VStack(spacing: 0) {
+                    // Side by side when the widget is wide enough for it; one above the other when it is not.
+                    if style == .stacked || room.width < room.height * 0.95 {
+                        let half = CGSize(width: room.width, height: (room.height - 6) / 2)
+                        VStack(spacing: 6) {
+                            TallDigits(parts: [(hour, .white)], size: half)
+                            TallDigits(parts: [(minute, minuteColor)], size: half)
+                        }
+                    } else {
+                        TallDigits(parts: [(hour, .white), (":", .white.opacity(0.35)), (minute, minuteColor)], size: room)
+                    }
+                    if dated {
+                        Text(context.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)).uppercased())
+                            .font(.system(size: 9, weight: .semibold)).tracking(1.6).foregroundStyle(.secondary).lineLimit(1).frame(height: 18, alignment: .bottom)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityElement(children: .ignore).accessibilityLabel(context.date.formatted(.dateTime.hour().minute()))
+            }
+        }
+    }
+    /// Hour and minute as two digits each, on the 12 or 24 hour clock the Mac is set to. Formatting the hour
+    /// on its own would bring the locale's unit with it ("16 h" in French).
+    static func digits(of date: Date, calendar: Calendar = .current, locale: Locale = .current) -> (String, String) {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        var hour = parts.hour ?? 0
+        let twelve = DateFormatter.dateFormat(fromTemplate: "j", options: 0, locale: locale)?.contains("a") == true
+        if twelve { hour = hour % 12 == 0 ? 12 : hour % 12 }
+        return (String(format: "%02d", hour), String(format: "%02d", parts.minute ?? 0))
+    }
+    private var classic: some View {
         let slim = size.width < 110, flat = size.height < 110
         let large = !flat && size.width >= 200
-        Card(padding: slim || flat ? 8 : 12) {
+        return Card(padding: slim || flat ? 8 : 12) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
                 let time = Text(context.date, format: .dateTime.hour().minute()).font(.system(size: large ? 44 : slim ? 19 : 26, weight: .light, design: .rounded)).monospacedDigit()
                 let day = Text(context.date.formatted(large ? .dateTime.weekday(.wide).day().month(.wide) : .dateTime.weekday(.abbreviated).day().month(.abbreviated)).capitalized)

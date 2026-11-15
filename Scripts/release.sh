@@ -1,7 +1,8 @@
 #!/bin/bash
 # Builds what a GitHub release needs for the in-app updater:
-#   dist/release/Notcher-<version>-macos-<arch>.zip   the app
-#   dist/release/SHA256SUMS.txt                       its checksum
+#   dist/release/Notcher-<version>-macos-<arch>.zip   the app, as the updater downloads it
+#   dist/release/Notcher-<version>-macos-<arch>.dmg   the app, as people install it the first time
+#   dist/release/SHA256SUMS.txt                       their checksums
 #   dist/release/latest.json                          the signed manifest the app reads
 #
 #   ./Scripts/release.sh --init-key   once: creates the signing key in the keychain and writes its public
@@ -63,16 +64,23 @@ rm -rf "$out"; mkdir -p "$out"
 archive="Notcher-$version-$platform.zip"
 # ditto keeps the bundle's permissions, symlinks and signature intact.
 ditto -c -k --keepParent dist/Notcher.app "$out/$archive"
-(cd "$out" && shasum -a 256 "$archive" > SHA256SUMS.txt)
+# The disk image is for a first installation: the app next to a shortcut to Applications.
+image="Notcher-$version-$platform.dmg"
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT
+ditto dist/Notcher.app "$staging/Notcher.app"
+ln -s /Applications "$staging/Applications"
+hdiutil create -volname "Notcher $version" -srcfolder "$staging" -fs HFS+ -format UDZO -ov -quiet "$out/$image"
+(cd "$out" && shasum -a 256 "$archive" "$image" > SHA256SUMS.txt)
 notes="-"; [ -f RELEASE_NOTES.md ] && notes="RELEASE_NOTES.md"
 NOTCHER_UPDATE_SIGNING_KEY="$private" swift Scripts/update-tool.swift manifest "$out/$archive" "$version" "$platform" \
     "https://github.com/$repository/releases/download/$tag/$archive" "$notes" "$out/latest.json"
 
 if [ "$mode" = "--publish" ]; then
     notes_arguments=(--generate-notes); [ -f RELEASE_NOTES.md ] && notes_arguments=(--notes-file RELEASE_NOTES.md)
-    gh release create "$tag" "$out/$archive" "$out/SHA256SUMS.txt" "$out/latest.json" --repo "$repository" --draft --title "Notcher $tag" "${notes_arguments[@]}"
+    gh release create "$tag" "$out/$image" "$out/$archive" "$out/SHA256SUMS.txt" "$out/latest.json" --repo "$repository" --draft --title "Notcher $tag" "${notes_arguments[@]}"
     echo "Draft release $tag created. Installed copies see it once you publish it on GitHub."
 else
     printf 'Release files ready in %s\n' "$out"
-    echo "Publish them with: $0 --publish   (or attach the three files to a release tagged $tag)"
+    echo "Publish them with: $0 --publish   (or attach these files to a release tagged $tag)"
 fi

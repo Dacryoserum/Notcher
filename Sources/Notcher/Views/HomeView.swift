@@ -20,10 +20,10 @@ struct HomeView: View {
         GeometryReader { geometry in
             let layout = model.preferences.homeLayout
             ZStack(alignment: .topLeading) {
-                ForEach(layout.items) { item in
+                ForEach(layout.items.filter { $0.widget != .agents || model.preferences.developerMode }) { item in
                     let frame = HomeLayout.frame(of: item, in: geometry.size, spacing: 12)
                     HomeWidgetView(model: model, widget: item.widget, size: frame.size)
-                        .frame(width: frame.width, height: frame.height)
+                        .frame(width: frame.width, height: frame.height).contentShape(Rectangle())
                         .offset(x: frame.minX, y: frame.minY)
                 }
             }.frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
@@ -84,7 +84,7 @@ struct MediaCard: View {
     @ViewBuilder var body: some View {
         if let size {
             let width = size.width, height = size.height
-            if width >= 360 && height >= 195 { full }
+            if width >= 300 && height >= 110 { showcase(width: width, height: height) }
             else if width < 110 && height < 110 { tile }
             else if height < 110 {
                 // One row of cells: cover, then as much as the width allows.
@@ -126,12 +126,45 @@ struct MediaCard: View {
             }
         } else { full }
     }
+    /// A widget with room to spare: the cover fills its height, its colour seeping into the black around it,
+    /// and everything else lines up to its right.
+    private func showcase(width: CGFloat, height: CGFloat) -> some View {
+        let side = min(height - 24, width * 0.42), roomy = height >= 190
+        return Card(padding: 12) {
+            HStack(spacing: 16) {
+                artwork(side, radius: side >= 120 ? 16 : 13)
+                    .background {
+                        if let tint = media.tint, media.artwork != nil {
+                            RoundedRectangle(cornerRadius: 20).fill(tint).padding(4).blur(radius: 22).opacity(0.5)
+                                .transition(.opacity).allowsHitTesting(false)
+                        }
+                    }
+                    .animation(.easeOut(duration: 0.4), value: media.tint)
+                VStack(alignment: .leading, spacing: 0) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(media.track?.title ?? L("Aucune lecture")).font(.system(size: roomy ? 16 : 14, weight: .semibold)).lineLimit(roomy ? 2 : 1)
+                        Text(media.track.map { $0.artist.isEmpty ? $0.application : $0.artist } ?? L("Lance un lecteur")).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        if roomy, let album = media.track?.album, !album.isEmpty { Text(album).font(.system(size: 9)).foregroundStyle(Theme.muted).lineLimit(1) }
+                    }
+                    Spacer(minLength: 4)
+                    MediaTimeline(media: media, labels: width - side >= 250)
+                    HStack(spacing: roomy ? 14 : 6) {
+                        Spacer(minLength: 0)
+                        transport("backward.fill", "Morceau précédent", "previous")
+                        playButton(roomy ? 34 : 30)
+                        transport("forward.fill", "Morceau suivant", "next")
+                        Spacer(minLength: 0)
+                    }.padding(.top, roomy ? 6 : 2)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading).padding(.vertical, 2)
+            }.frame(maxHeight: .infinity)
+        }.overlay(alignment: .bottomLeading) { if let error = media.error { Text(L(error)).font(.system(size: 8)).foregroundStyle(Theme.orange).lineLimit(1).padding(.horizontal, 16).padding(.bottom, 3) } }
+    }
     /// A single cell: the cover itself is the play button.
     private var tile: some View {
         Button { media.command("toggle"); Haptics.play(.generic) } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: 18).fill(Theme.surface)
-                if let image = media.artwork { Image(nsImage: image).resizable().scaledToFill().opacity(0.55) }
+                if let image = media.artwork { Image(nsImage: image).resizable().scaledToFill().opacity(0.55).allowsHitTesting(false) }
                 Image(systemName: playing ? "pause.fill" : "play.fill").font(.system(size: 17, weight: .bold)).foregroundStyle(media.artwork == nil ? accent : .white)
                     .contentTransition(.symbolEffect(.replace)).shadow(color: .black.opacity(0.5), radius: 3)
             }.frame(maxWidth: .infinity, maxHeight: .infinity).clipShape(RoundedRectangle(cornerRadius: 18))
@@ -180,7 +213,7 @@ struct MediaCard: View {
         let side = max(24, side)
         return ZStack {
             RoundedRectangle(cornerRadius: radius).fill(LinearGradient(colors: [accent.opacity(0.23), accent.opacity(0.06)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            if let image = media.artwork { Image(nsImage: image).resizable().scaledToFill() }
+            if let image = media.artwork { Image(nsImage: image).resizable().scaledToFill().allowsHitTesting(false) }
             else {
                 if side >= 60 {
                     Circle().stroke(accent.opacity(0.16), lineWidth: 1).frame(width: side * 0.72, height: side * 0.72)

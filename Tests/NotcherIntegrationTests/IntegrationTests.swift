@@ -50,6 +50,44 @@ final class IntegrationTests: XCTestCase {
         let restored = try JSONSerialization.jsonObject(with: Data(contentsOf: settings))
         XCTAssertEqual(try JSONSerialization.data(withJSONObject: restored, options: [.sortedKeys]), data)
     }
+    func testCodexHookSitsNextToTheUsersOwnAndLeavesWithoutThem() throws {
+        let hooks = directory.appendingPathComponent("hooks.json")
+        // No file yet: Notcher creates it, and removes it again when its entry was the only thing in it.
+        try CodexIntegration.install(hooksURL: hooks, executablePath: "/tmp/test path/Notcher")
+        try CodexIntegration.install(hooksURL: hooks, executablePath: "/tmp/test path/Notcher")
+        var root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hooks)) as? [String: [String: [[String: Any]]]])
+        XCTAssertEqual(root["hooks"]?["PermissionRequest"]?.count, 1)
+        XCTAssertTrue(try String(contentsOf: CodexIntegration.wrapper, encoding: .utf8).contains("exec '/tmp/test path/Notcher' --codex-permission"))
+        try CodexIntegration.uninstall(hooksURL: hooks)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: hooks.path))
+        // The user's own hooks come back byte for byte.
+        let own: [String: Any] = ["description": "mine", "hooks": ["PermissionRequest": [["matcher": "Bash", "hooks": [["type": "command", "command": "/usr/local/bin/policy"]]]], "Stop": [["hooks": [["type": "command", "command": "say done"]]]]]]
+        let data = try JSONSerialization.data(withJSONObject: own, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: hooks)
+        try CodexIntegration.install(hooksURL: hooks, executablePath: "/tmp/Notcher")
+        root = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: hooks)) as? [String: Any])["hooks"].flatMap { ["hooks": $0 as! [String: [[String: Any]]]] } ?? [:]
+        XCTAssertEqual(root["hooks"]?["PermissionRequest"]?.count, 2)
+        try CodexIntegration.uninstall(hooksURL: hooks)
+        XCTAssertEqual(try Data(contentsOf: hooks), data)
+        // A file Notcher cannot read is never rewritten.
+        try Data("not json".utf8).write(to: hooks)
+        try CodexIntegration.install(hooksURL: hooks, executablePath: "/tmp/Notcher")
+        XCTAssertEqual(try String(contentsOf: hooks, encoding: .utf8), "not json")
+    }
+    /// Quotas once stopped arriving because the relay still named an app that was no longer there.
+    func testStatusLineRelayFollowsTheAppAndKeepsTheUsersOwnStatusLine() throws {
+        let settings = directory.appendingPathComponent("settings.json"), record = directory.appendingPathComponent("record.json")
+        try Data(#"{"statusLine":{"type":"command","command":"printf mine"}}"#.utf8).write(to: settings)
+        try ClaudeIntegration.install(settingsURL: settings, recordURL: record, executablePath: "/old place/Notcher")
+        try ClaudeIntegration.refreshHooks(settingsURL: settings, recordURL: record, executablePath: "/new place/Notcher")
+        let script = try String(contentsOf: ClaudeIntegration.statusWrapper, encoding: .utf8)
+        XCTAssertFalse(script.contains("/old place"))
+        XCTAssertTrue(script.contains("if [ -x '/new place/Notcher' ]; then printf '%s' \"$input\" | '/new place/Notcher' --claude-statusline --quiet; fi"))
+        XCTAssertTrue(script.contains("| /bin/sh -c 'printf mine'"), "The status line the user had still runs, even if the app is gone")
+        // Without a status line of the user's, Notcher prints its own.
+        XCTAssertFalse(ClaudeIntegration.statusScript(executable: "/a/Notcher", previousCommand: nil).contains("--quiet"))
+        try ClaudeIntegration.uninstall(settingsURL: settings, recordURL: record)
+    }
     func testOlderInstallationGainsTheHooksOnRefresh() throws {
         let settings = directory.appendingPathComponent("settings.json")
         try Data(#"{"statusLine":{"type":"command","command":"x"},"hooks":{"Stop":"not a list"}}"#.utf8).write(to: settings)

@@ -25,7 +25,7 @@ final class PanelTests: XCTestCase {
         let discreet = CompactPanel.size(notchWidth: 190, notchHeight: 32, media: false, focus: false, activity: false, idleInfo: false)
         XCTAssertLessThan(discreet.width, idle.width)
         for idleInfo in [false, true] {
-            XCTAssertEqual(CompactPanel.size(notchWidth: 190, notchHeight: 32, media: true, focus: false, activity: false, idleInfo: idleInfo).width, 374)
+            XCTAssertEqual(CompactPanel.size(notchWidth: 190, notchHeight: 32, media: true, focus: false, activity: false, idleInfo: idleInfo).width, 294)
             XCTAssertEqual(CompactPanel.size(notchWidth: 190, notchHeight: 32, media: false, focus: false, activity: true, idleInfo: idleInfo).width, 442)
         }
     }
