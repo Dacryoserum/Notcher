@@ -18,9 +18,9 @@ SwiftUI + AppKit natif · aucune dépendance · tout reste sur ton Mac.
 
 <br>
 
-<a href="docs/media/fr/demo.mp4"><img src="docs/media/fr/demo.gif" width="800" alt="Notcher en action : la musique dans le notch fermé, le panneau qui s'ouvre sur ses widgets, le dépôt, les fiches, les quotas, Claude Code qui termine et des AirPods qui se connectent"></a>
+<a href="docs/media/fr/demo.mp4"><img src="docs/media/fr/poster.png" width="860" alt="Notcher sur un écran de MacBook : le panneau ouvert sous l’encoche, avec les widgets musique, Pomodoro, volume et agenda. Clique pour voir la démo."></a>
 
-<sub>▶ <a href="docs/media/fr/demo.mp4">Voir en pleine qualité</a></sub>
+<sub>▶ <a href="docs/media/fr/demo.mp4">Voir la démo</a> (55 s, 60 images par seconde)</sub>
 
 </div>
 
