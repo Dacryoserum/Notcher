@@ -16,12 +16,19 @@ import NotcherCore
     /// Everything about AI coding agents (the Agents tab, quotas, Claude Code and Codex connections, questions
     /// answered from the notch) only exists in developer mode.
     @Published var developerMode: Bool { didSet { defaults.set(developerMode, forKey: "developerMode") } }
+    /// Agents chosen on the Agents page ("claude", "codex", "both"); empty until the first visit asks.
+    @Published var agentChoice: String { didSet { defaults.set(agentChoice, forKey: "agentChoice") } }
+    var chosenAgents: [AgentKind] {
+        switch agentChoice { case "claude": return [.claude]; case "codex": return [.codex]; case "both": return [.claude, .codex]; default: return [] }
+    }
     /// Claude Code's permission questions can be answered in the notch.
     @Published var agentApprovals: Bool { didSet { defaults.set(agentApprovals, forKey: "agentApprovals") } }
     @Published var clockStyle: ClockStyle { didSet { defaults.set(clockStyle.rawValue, forKey: "clockStyle") } }
     /// The minutes of the clock widget take the accent colour.
     @Published var clockTwoTone: Bool { didSet { defaults.set(clockTwoTone, forKey: "clockTwoTone") } }
     @Published var showHUD: Bool { didSet { defaults.set(showHUD, forKey: "showHUD") } }
+    /// Announcements turned off one by one (`NotchAlert` raw values).
+    @Published var mutedAlerts: Set<String> { didSet { defaults.set(mutedAlerts.sorted(), forKey: "mutedAlerts") } }
     @Published var dashboardLayout: DashboardLayout { didSet { defaults.set(dashboardLayout.rawValue, forKey: "dashboardLayout") } }
     @Published var panelSize: PanelSize { didSet { defaults.set(panelSize.rawValue, forKey: "panelSize") } }
     @Published var navigationStyle: NavigationStyle { didSet { defaults.set(navigationStyle.rawValue, forKey: "navigationStyle") } }
@@ -60,9 +67,11 @@ import NotcherCore
         let connected = defaults.bool(forKey: "codexEnabled") || FileManager.default.fileExists(atPath: AppPaths.integrations.appendingPathComponent("claude-install.json").path)
         developerMode = defaults.object(forKey: "developerMode") == nil ? connected : defaults.bool(forKey: "developerMode")
         agentApprovals = defaults.bool(forKey: "agentApprovals")
+        agentChoice = ["claude", "codex", "both"].contains(defaults.string(forKey: "agentChoice") ?? "") ? defaults.string(forKey: "agentChoice")! : ""
         clockStyle = ClockStyle(rawValue: defaults.string(forKey: "clockStyle") ?? "") ?? .tall
         clockTwoTone = defaults.bool(forKey: "clockTwoTone")
         showHUD = defaults.bool(forKey: "showHUD")
+        mutedAlerts = Set(defaults.stringArray(forKey: "mutedAlerts") ?? [])
         dashboardLayout = DashboardLayout(rawValue: defaults.string(forKey: "dashboardLayout") ?? "") ?? .overview
         panelSize = PanelSize(rawValue: defaults.string(forKey: "panelSize") ?? "") ?? .compact
         navigationStyle = NavigationStyle(rawValue: defaults.string(forKey: "navigationStyle") ?? "") ?? .labels
@@ -72,6 +81,14 @@ import NotcherCore
         compactStyle = CompactStyle(rawValue: defaults.string(forKey: "compactStyle") ?? "") ?? .minimal
         hiddenTabs = Set(defaults.stringArray(forKey: "hiddenTabs") ?? [])
         hotKey = HotKeyCombo.restore(defaults.data(forKey: "hotKey"))
+    }
+    /// The closed notch may announce this kind of event.
+    func allows(_ alert: NotchAlert) -> Bool {
+        guard showHUD, !mutedAlerts.contains(alert.rawValue) else { return false }
+        return alert.group != .claude || developerMode
+    }
+    func setAlert(_ alert: NotchAlert, enabled: Bool) {
+        if enabled { mutedAlerts.remove(alert.rawValue) } else { mutedAlerts.insert(alert.rawValue) }
     }
     var accentColor: Color {
         let color = AccentColor(hex: accentHex) ?? .default

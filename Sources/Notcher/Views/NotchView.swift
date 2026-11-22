@@ -222,10 +222,17 @@ struct NotchHeader: View {
     /// The shape flares out by this much at each end; nothing can be drawn in the flare.
     static let ear: CGFloat = 16
     var body: some View {
-        let wing = max(0, (width - 2 * shift - model.notchWidth) / 2), rightWing = wing + 2 * shift
+        let wing = max(0, (width - 2 * shift - model.notchWidth) / 2)
+        // The quick strip takes the outer end of the right wing; the rest of the wing keeps its usual content.
+        let strip = model.presentationExpanded ? 0 : min(2 * shift, model.minorWidth)
+        let rightWing = wing + 2 * shift - strip
         let idle = model.preferences.compactStyle == .info || model.presentationExpanded
         // Music alone: narrow wings, the cover and the bars each centred in theirs.
         let slim = !model.presentationExpanded && model.compactPlaybackVisible
+        let titled = !model.presentationExpanded && model.activity.map { !$0.pictureOnly } == true
+        // A picture on the left and a mark on the right (Claude has finished, a lasting state): the mark sits in
+        // the middle of its wing, as the picture does in the opposite one.
+        let mirrored = !model.presentationExpanded && !slim && (model.activity?.pictureOnly == true || (model.activity == nil && model.ambient != nil))
         return HStack(spacing: 0) {
                 HStack(spacing: 7) {
                     if let activity = model.activity {
@@ -233,7 +240,6 @@ struct NotchHeader: View {
                             Image(nsImage: artwork).resizable().interpolation(.high).scaledToFit().frame(width: min(26, model.notchHeight - 6), height: min(26, model.notchHeight - 6))
                                 .modifier(PopIn(active: activity.pictureOnly))
                         } else { Image(systemName: activity.symbol).foregroundStyle(activity.color ?? accent).contentTransition(.symbolEffect(.replace)) }
-                        if !model.presentationExpanded && !activity.pictureOnly { Text(L(activity.title)).font(.system(size: 10, weight: .medium)).lineLimit(1) }
                     } else if let ambient = model.ambient, !model.presentationExpanded {
                         AmbientPicture(ambient: ambient, side: min(24, model.notchHeight - 6))
                     } else { CompactMedia(media: model.media, height: model.notchHeight, idle: idle) }
@@ -244,6 +250,10 @@ struct NotchHeader: View {
                 .frame(width: wing)
                 Color.clear.frame(width: model.notchWidth, height: 1)
                 HStack(spacing: 8) {
+                    if titled, let activity = model.activity {
+                        Text(L(activity.title)).font(Font(AppModel.activityTitleFont)).lineLimit(1).truncationMode(.tail)
+                            .frame(maxWidth: AppModel.activityTitleLimit, alignment: .leading).fixedSize(horizontal: false, vertical: true)
+                    }
                     if let activity = model.activity, let value = activity.value {
                         ProgressView(value: min(1, max(0, value))).tint(activity.color ?? accent).frame(width: 44)
                             .animation(.easeOut(duration: 0.1), value: value)
@@ -260,12 +270,17 @@ struct NotchHeader: View {
                     } else {
                         // Alone in its wing, the indicator takes the same room as the cover opposite and sits in its middle.
                         CompactStatus(media: model.media, focus: model.focus, idle: idle, hovered: model.playbackHover && slim,
-                                      barsWidth: slim ? max(24, wing - Self.ear) : 24, volume: slim && shift > 0 ? model.musicVolume : nil)
+                                      barsWidth: slim ? max(24, wing - Self.ear) : 24)
                     }
                 }
-                .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .trailing : .leading)
-                .padding(.leading, slim ? 0 : 10).padding(.trailing, model.presentationExpanded ? 34 : slim ? Self.ear : 24)
+                .frame(maxWidth: .infinity, alignment: model.presentationExpanded ? .trailing : mirrored ? .center : .leading)
+                .padding(.leading, slim ? 0 : mirrored ? 16 : 10).padding(.trailing, model.presentationExpanded ? 34 : strip > 0 ? 0 : slim ? Self.ear : mirrored ? 16 : titled ? Self.ear + 14 : 24)
                 .frame(width: rightWing)
+                if strip > 0, let minor = model.minor {
+                    MinorStrip(minor: minor, symbol: model.minorShowsSymbol, tint: slim ? model.media.tint : nil)
+                        .padding(.trailing, Self.ear + 4).frame(width: strip, alignment: .trailing)
+                        .transition(.opacity)
+                }
         }.font(.system(size: 12))
         .frame(maxHeight: .infinity).clipped()
         .contentShape(Rectangle())
@@ -350,7 +365,6 @@ private struct CompactStatus: View {
     let idle: Bool
     let hovered: Bool
     var barsWidth: CGFloat = 24
-    var volume: VolumeReadout? = nil
     var body: some View {
         if focus.clock.deadline != nil {
             Image(systemName: "timer").foregroundStyle(accent)
@@ -368,22 +382,53 @@ private struct CompactStatus: View {
             .frame(width: barsWidth, height: 18)
             .animation(.easeOut(duration: 0.16), value: hovered)
             .animation(.easeOut(duration: 0.3), value: media.tint)
-            if let volume {
-                // The volume moved while music plays: its level, small, in the part of the wing that just grew.
-                Group {
-                    if volume.muted { Image(systemName: "speaker.slash.fill").font(.system(size: 9)) }
-                    else { Text("\(Int((volume.level * 100).rounded()))").font(.system(size: 10, weight: .medium, design: .monospaced)).contentTransition(.numericText(value: volume.level)) }
-                }.foregroundStyle(.white.opacity(0.75)).frame(width: 18, alignment: .trailing)
-                Capsule().fill(.white.opacity(0.14)).frame(width: 34, height: 3)
-                    .overlay(alignment: .leading) { Capsule().fill(media.tint ?? accent).frame(width: 34 * min(1, max(0, volume.level)), height: 3) }
-                    .animation(.easeOut(duration: 0.1), value: volume.level)
-                    .accessibilityLabel(L("Volume")).accessibilityValue("\(Int((volume.level * 100).rounded())) %")
-            }
         } else if idle {
             TimelineView(.periodic(from: .now, by: 60)) { context in
                 Text(context.date, format: .dateTime.hour().minute()).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+/// Volume, brightness or Caps Lock, told at the end of the right wing without hiding what the notch shows.
+private struct MinorStrip: View {
+    @Environment(\.notcherAccent) private var accent
+    let minor: MinorAlert
+    /// False beside the music, where the level obviously belongs to it.
+    let symbol: Bool
+    var tint: Color?
+    var body: some View {
+        HStack(spacing: 8) {
+            switch minor {
+            case .capsLock(let on):
+                Image(systemName: on ? "capslock.fill" : "capslock").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(on ? Color.white : Color.white.opacity(0.55)).contentTransition(.symbolEffect(.replace))
+                    .accessibilityLabel(L(on ? "Majuscules activées" : "Majuscules désactivées"))
+            case .volume(let volume):
+                if symbol || volume.muted {
+                    Image(systemName: volumeSymbol(volume)).font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.75))
+                        .frame(width: 12).contentTransition(.symbolEffect(.replace))
+                }
+                level(volume.muted ? 0 : volume.level, hideFigure: volume.muted).accessibilityLabel(L("Volume"))
+            case .brightness(let value):
+                Image(systemName: value < 0.34 ? "sun.min.fill" : "sun.max.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.75))
+                    .frame(width: 12).contentTransition(.symbolEffect(.replace))
+                level(value, hideFigure: false).accessibilityLabel(L("Luminosité"))
+            }
+        }
+    }
+    private func volumeSymbol(_ volume: VolumeReadout) -> String {
+        volume.muted || volume.level <= 0 ? "speaker.slash.fill" : volume.level < 0.34 ? "speaker.wave.1.fill" : volume.level < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
+    }
+    @ViewBuilder private func level(_ value: Double, hideFigure: Bool) -> some View {
+        if !hideFigure {
+            Text("\(Int((value * 100).rounded()))").font(.system(size: 10, weight: .medium, design: .monospaced)).contentTransition(.numericText(value: value))
+                .foregroundStyle(.white.opacity(0.75)).frame(width: 18, alignment: .trailing)
+        }
+        Capsule().fill(.white.opacity(0.14)).frame(width: 34, height: 3)
+            .overlay(alignment: .leading) { Capsule().fill(tint ?? accent).frame(width: 34 * min(1, max(0, value)), height: 3) }
+            .animation(.easeOut(duration: 0.1), value: value)
+            .accessibilityValue("\(Int((value * 100).rounded())) %")
     }
 }
 

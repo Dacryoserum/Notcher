@@ -535,6 +535,22 @@ private struct Switch: View {
     var body: some View { Toggle(L(title), isOn: $isOn).labelsHidden().toggleStyle(.switch).controlSize(.small).accessibilityLabel(L(title)) }
 }
 
+/// What triggers an announcement, when its title does not say it all.
+private func alertDetail(_ alert: NotchAlert) -> String? {
+    switch alert {
+    case .battery: return "À 20 % et 10 %, puis quand la charge est complète."
+    case .network: return "Après quelques secondes sans connexion, pas à chaque micro-coupure."
+    case .microphone: return "Le nom de l’app qui commence à écouter."
+    case .camera: return "Avec l’app au premier plan, que macOS ne précise pas."
+    case .screenshot: return "Captures enregistrées ou copiées, avec macOS ou Shottr, CleanShot…"
+    case .calendar: return "Dans la minute où il commence."
+    case .claudeDone: return "Quand Claude Code a fini de répondre."
+    case .claudeIdle: return "Quand Claude Code attend depuis un moment que tu reprennes."
+    case .claudeShipped: return "Quand Claude crée un commit, pousse, ouvre une pull request ou déploie, et quand ça échoue."
+    default: return nil
+    }
+}
+
 private struct BehaviorPane: View {
     @ObservedObject var model: AppModel
     @ObservedObject var preferences: Preferences
@@ -570,9 +586,25 @@ private struct BehaviorPane: View {
                             if value { Haptics.enabled = true; Haptics.play(.levelChange) }
                         }))
                     }
-                    SettingRow(symbol: "speaker.wave.2", title: "Indicateurs dans le notch", subtitle: "Volume, chargeur, écouteurs, réponses de Claude Code, téléchargements terminés, prochain rendez-vous.", divider: false) {
+                    SettingRow(symbol: "speaker.wave.2", title: "Indicateurs dans le notch", subtitle: "Le notch fermé annonce ce qui se passe sur le Mac. Choisis quoi ci-dessous.", divider: false) {
                         Switch(title: "Indicateurs dans le notch", isOn: $preferences.showHUD)
                     }
+                }
+            }
+            if preferences.showHUD {
+                SettingsGroup(title: "Annonces") {
+                    ForEach(NotchAlert.Group.allCases.filter { $0 != .claude || preferences.developerMode }, id: \.self) { group in
+                        let alerts = NotchAlert.allCases.filter { $0.group == group }
+                        SettingsCard {
+                            ForEach(alerts) { alert in
+                                SettingRow(symbol: alert.symbol, title: alert.title, subtitle: alertDetail(alert), divider: alert != alerts.last) {
+                                    Switch(title: alert.title, isOn: Binding(get: { !preferences.mutedAlerts.contains(alert.rawValue) }, set: { preferences.setAlert(alert, enabled: $0) }))
+                                }
+                            }
+                        }
+                    }
+                    Text("Aucune de ces annonces ne demande d’autorisation à macOS : Notcher ne lit ni le son, ni l’image, ni le contenu des fichiers.")
+                        .font(.system(size: 11)).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             SettingsGroup(title: "Mac") {

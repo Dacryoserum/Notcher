@@ -131,7 +131,13 @@ import NotcherCore
     @Published private(set) var subagents: [ClaudeSubagent] = []
     /// Questions Claude Code is waiting on, oldest first; the notch shows the first one.
     @Published private(set) var permissionRequests: [PendingPermission] = []
+    /// When a session last finished answering: the Agents page celebrates for a moment.
+    @Published private(set) var claudeFinishedAt: Date?
     var onClaudeFinished: (() -> Void)?
+    /// Claude has finished and has been waiting on the user for a while ("idle_prompt").
+    var onClaudeIdle: (() -> Void)?
+    /// A shell command run by Claude committed, pushed, opened a pull request or deployed; `failed` when it did not work.
+    var onShip: ((ShipAction, _ failed: Bool) -> Void)?
     var onPermissionRequest: (() -> Void)?
     private let permissions = PermissionServer()
     private var sessions = ClaudeSessions()
@@ -173,7 +179,9 @@ import NotcherCore
         let finished = sessions.apply(event, at: now)
         if event.kind == .prompt { claudePromptAt = now }
         publishSessions()
-        if finished { onClaudeFinished?() }
+        if finished { claudeFinishedAt = now; onClaudeFinished?() }
+        if event.kind == .attention, event.detail == "idle_prompt" { onClaudeIdle?() }
+        if event.kind == .tool || event.kind == .toolFailure, let action = event.detail.flatMap(ShipAction.init(rawValue:)) { onShip?(action, event.kind == .toolFailure) }
     }
     private func publishSessions() {
         if claudeWorking != sessions.working { claudeWorking = sessions.working }

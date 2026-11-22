@@ -126,6 +126,11 @@ final class MediaTests: XCTestCase {
         media.restMinutes = 5
         await player.setPlayback(false, position: 42)
         await media.refresh()
+        // A player found paused (left open in the background) does not take the notch until it plays.
+        XCTAssertTrue(media.resting); XCTAssertNil(media.compactTrack)
+        await player.setPlayback(true, position: 42); await media.refresh()
+        XCTAssertNotNil(media.compactTrack)
+        await player.setPlayback(false, position: 42); await media.refresh()
         XCTAssertFalse(media.resting); XCTAssertNotNil(media.compactTrack)
         clock.advance(299); await media.refresh()
         XCTAssertFalse(media.resting)

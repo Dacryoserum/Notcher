@@ -4,11 +4,12 @@ import Foundation
 public struct ClaudeEvent: Equatable, Sendable {
     public enum Kind: String, Sendable, CaseIterable {
         case prompt = "UserPromptSubmit", tool = "PostToolUse", attention = "Notification", stop = "Stop", end = "SessionEnd"
-        case subagentStart = "SubagentStart", subagentStop = "SubagentStop"
+        case subagentStart = "SubagentStart", subagentStop = "SubagentStop", toolFailure = "PostToolUseFailure"
     }
     public var kind: Kind
     public var session: String
-    /// Notification type ("permission_prompt", "idle_prompt"…) when Claude Code gives one.
+    /// Notification type ("permission_prompt", "idle_prompt"…) when Claude Code gives one; for a shell command,
+    /// what it ships (`ShipAction`), never the command itself.
     public var detail: String?
     /// The sub-agent an event comes from, and its kind ("Explore", "general-purpose"…).
     public var agent: String?
@@ -22,7 +23,12 @@ public struct ClaudeEvent: Equatable, Sendable {
               let name = root["hook_event_name"] as? String, let kind = Kind(rawValue: name),
               let session = root["session_id"] as? String, !session.isEmpty, session.count <= 200 else { return nil }
         func short(_ key: String) -> String? { (root[key] as? String).flatMap { $0.isEmpty || $0.count > 120 ? nil : $0 } }
-        return ClaudeEvent(kind: kind, session: session, detail: root["notification_type"] as? String, agent: short("agent_id"), agentType: short("agent_type"))
+        var detail = root["notification_type"] as? String
+        if kind == .tool || kind == .toolFailure, root["tool_name"] as? String == "Bash",
+           let command = (root["tool_input"] as? [String: Any])?["command"] as? String, command.count <= 20_000 {
+            detail = ShipAction.classify(command)?.rawValue
+        }
+        return ClaudeEvent(kind: kind, session: session, detail: detail, agent: short("agent_id"), agentType: short("agent_type"))
     }
 }
 
@@ -53,7 +59,7 @@ public struct ClaudeSessions: Equatable, Sendable {
     /// Applies one event; true when it means a session has just finished answering.
     @discardableResult public mutating func apply(_ event: ClaudeEvent, at now: Date = Date()) -> Bool {
         switch event.kind {
-        case .prompt, .tool:
+        case .prompt, .tool, .toolFailure:
             entries[event.session] = Entry(phase: .working, seen: now)
         case .attention:
             // "Idle" and sign-in notices are not requests; an untyped notice only counts while an answer is under way.

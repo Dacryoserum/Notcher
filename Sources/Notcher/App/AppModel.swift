@@ -54,6 +54,18 @@ struct VolumeReadout: Equatable {
     var level: Double
     var muted: Bool
 }
+/// A quick change (a key pressed) told in a strip added to the right of whatever the closed notch shows,
+/// rather than in place of it.
+enum MinorAlert: Equatable {
+    case volume(VolumeReadout), brightness(Double), capsLock(Bool)
+    var level: Double? {
+        switch self {
+        case .volume(let value): return value.muted ? 0 : value.level
+        case .brightness(let value): return value
+        case .capsLock: return nil
+        }
+    }
+}
 struct ToastAction {
     let title: String
     let run: () -> Void
@@ -86,7 +98,16 @@ struct NotchAmbient: Equatable {
     let bluetooth = BluetoothService()
     let updates = UpdateService()
     let downloads = DownloadWatcher()
+    let capsLock = CapsLockWatcher()
+    let network = NetworkWatcher()
+    let screenshots = ScreenshotWatcher()
+    private lazy var brightnessWatcher = BrightnessWatcher { level in Task { @MainActor [weak self] in self?.announceBrightness(level) } }
+    private lazy var captureWatcher = CaptureWatcher { old, new in Task { @MainActor [weak self] in self?.announceCapture(old, new) } }
+    private var batteryWatch = BatteryWatch()
+    /// Events already announced as starting, so a meeting is announced once.
+    private var announcedEvents: [String: Date] = [:]
     lazy var agents = AgentService(preferences: preferences)
+    let usageStats = UsageStatsService()
     lazy var clipboard = ClipboardService(preferences: preferences)
     @Published var expanded = false
     @Published var presentationExpanded = false
@@ -125,18 +146,45 @@ struct NotchAmbient: Equatable {
     var compactPlaybackVisible: Bool {
         !expanded && activity == nil && ambient == nil && focus.clock.deadline == nil && media.compactTrack != nil
     }
-    /// The volume just changed while the notch shows music: its right wing grows to hold the level.
-    @Published private(set) var musicVolume: VolumeReadout?
-    private var musicVolumeTask: Task<Void, Never>?
-    static let volumeWing: CGFloat = 74
-    var musicVolumeVisible: Bool { musicVolume != nil && compactPlaybackVisible && !permissionCardVisible }
-    /// How far the closed shape sits to the right of the notch's centre: only its right wing grows for the volume.
-    var targetShift: CGFloat { musicVolumeVisible ? Self.volumeWing / 2 : 0 }
+    /// Volume, brightness or Caps Lock just changed: the right wing grows to hold it, beside what is already shown.
+    @Published private(set) var minor: MinorAlert?
+    private var minorTask: Task<Void, Never>?
+    var minorVisible: Bool { minor != nil && !expanded && !permissionCardVisible }
+    /// With music the cover and the bars already say what the level is about; elsewhere a small symbol does.
+    var minorShowsSymbol: Bool {
+        guard let minor else { return false }
+        if case .volume = minor { return !compactPlaybackVisible }
+        return true
+    }
+    /// Room the strip takes: the figure and its bar, or the symbol alone, plus the flare of the shape.
+    var minorWidth: CGFloat {
+        guard minorVisible, let minor else { return 0 }
+        let content: CGFloat = minor.level == nil ? 14 : (minorShowsSymbol ? 12 + 8 : 0) + 18 + 8 + 34
+        return 8 + content + NotchHeader.ear + 4
+    }
+    /// A titled event: its picture on the left, its words on the right. The right wing is cut to fit them
+    /// instead of mirroring the left one.
+    var activityExtra: CGFloat {
+        guard !expanded, let activity, !activity.pictureOnly else { return 0 }
+        return max(0, Self.rightWing(for: activity) - CompactPanel.size(notchWidth: 0, notchHeight: 0, media: false, focus: false, activity: false, ambient: true).width / 2)
+    }
+    static let activityTitleFont = NSFont.systemFont(ofSize: 11, weight: .medium)
+    static let activityTitleLimit: CGFloat = 170
+    static func rightWing(for activity: NotchActivity) -> CGFloat {
+        let title = min(activityTitleLimit, ceil((L(activity.title) as NSString).size(withAttributes: [.font: activityTitleFont]).width))
+        var end: CGFloat = 0
+        if activity.value != nil { end = 8 + 44 + 8 + 24 }
+        else if let trailing = activity.trailing { end = 8 + 16 + 8 + ceil((trailing as NSString).size(withAttributes: [.font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)]).width) }
+        else if activity.mark != nil { end = 8 + 18 }
+        return 10 + title + end + NotchHeader.ear + 14
+    }
+    /// How far the closed shape sits to the right of the notch's centre: only its right wing grows.
+    var targetShift: CGFloat { (activityExtra + minorWidth) / 2 }
     /// Shift currently drawn; animated by the controller together with `shapeSize`.
     @Published var shapeShift: CGFloat = 0
-    private func showMusicVolume(_ value: VolumeReadout) {
-        musicVolumeTask?.cancel(); musicVolume = value
-        musicVolumeTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(1.6)); self?.musicVolume = nil } catch {} }
+    func showMinor(_ value: MinorAlert, seconds: Double = 1.6) {
+        minorTask?.cancel(); minor = value
+        minorTask = Task { [weak self] in do { try await Task.sleep(for: .seconds(seconds)); self?.minor = nil } catch {} }
     }
     private var lastPlaybackToggle = Date.distantPast
     /// A click on the bars. One press can reach the app by two routes; only the first one counts.
@@ -156,15 +204,14 @@ struct NotchAmbient: Equatable {
     var pageHeight: CGFloat { preferences.panelSize.pageHeight }
     var collapsedSize: CGSize {
         CompactPanel.size(notchWidth: notchWidth, notchHeight: notchHeight, media: media.compactTrack != nil, focus: focus.clock.deadline != nil,
-                          activity: activity.map { !$0.pictureOnly } ?? false, idleInfo: preferences.compactStyle == .info,
-                          ambient: ambient != nil || activity?.pictureOnly == true, hovered: hovering)
+                          activity: false, idleInfo: preferences.compactStyle == .info, ambient: ambient != nil || activity != nil, hovered: hovering)
     }
     var targetSize: CGSize { CGSize(width: width, height: height) }
     /// Height of the strip under the closed notch that holds an activity's details.
     static let detailHeight: CGFloat = 26
     var visibleTabs: [NotchTab] { NotchTab.allCases.filter { $0 == .home || (!preferences.hiddenTabs.contains($0.key) && ($0 != .agents || preferences.developerMode)) } }
     var collapsedWidth: CGFloat { collapsedSize.width }
-    var width: CGFloat { expanded ? expandedWidth : max(collapsedWidth + (musicVolumeVisible ? Self.volumeWing : 0), permissionCardVisible ? Self.permissionCard.width : 0) }
+    var width: CGFloat { expanded ? expandedWidth : max(collapsedWidth + activityExtra + minorWidth, permissionCardVisible ? Self.permissionCard.width : 0) }
     var height: CGFloat {
         if expanded { return notchHeight + pageHeight + 84 }
         return collapsedSize.height + (activity?.details.isEmpty == false ? Self.detailHeight : 0) + (permissionCardVisible ? Self.permissionCard.height : 0)
@@ -177,31 +224,68 @@ struct NotchAmbient: Equatable {
     func start() {
         agents.onLimit = { [weak self] title in guard self?.preferences.developerMode == true else { return }; self?.showActivity(.init(symbol: "sparkles", title: title, color: .orange), seconds: 6) }
         system.onVolumeChange = { [weak self] volume, muted in
-            guard let self, self.preferences.showHUD else { return }
-            // Turning the volume while music plays is about the music: the level joins the cover and the bars.
-            if self.compactPlaybackVisible && !self.permissionCardVisible { self.showMusicVolume(VolumeReadout(level: muted ? 0 : volume, muted: muted)); return }
-            let symbol = muted || volume <= 0 ? "speaker.slash.fill" : volume < 0.34 ? "speaker.wave.1.fill" : volume < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"
-            self.showActivity(.init(symbol: symbol, title: muted ? "Silence" : "Volume", value: muted ? 0 : volume), seconds: 1.6)
+            guard let self, self.preferences.allows(.volume), !self.expanded else { return }
+            self.showMinor(.volume(VolumeReadout(level: muted ? 0 : volume, muted: muted)))
         }
         system.onPowerChange = { [weak self] charging in
-            guard let self, self.preferences.showHUD else { return }
+            guard let self, self.preferences.allows(.power) else { return }
             let level = self.system.battery.map { Double($0) / 100 }
             self.showActivity(.init(symbol: charging ? "bolt.fill" : "battery.75percent", title: charging ? "En charge" : "Sur batterie", value: level), seconds: 3)
         }
         agents.onClaudeFinished = { [weak self] in
-            guard let self, self.preferences.showHUD, self.preferences.developerMode else { return }
+            guard let self, self.preferences.allows(.claudeDone) else { return }
             self.showActivity(.init(symbol: "asterisk", title: "", color: Theme.orange, artwork: ClaudeMark.icon, mark: "checkmark.circle.fill", markColor: Theme.green), seconds: 3.5)
             Haptics.play(.levelChange)
         }
         downloads.onFinished = { [weak self] path in
-            guard let self, self.preferences.showHUD else { return }
+            guard let self, self.preferences.allows(.download) else { return }
             self.showActivity(.init(symbol: "doc.fill", title: "", artwork: DownloadWatcher.icon(for: path), mark: "arrow.down.circle.fill"), seconds: 3.5)
         }
         system.onHeadphones = { [weak self] name in self?.announceHeadphones(name) }
+        system.onHeadphonesGone = { [weak self] name in
+            guard let self, self.preferences.allows(.headphones) else { return }
+            self.showActivity(.init(symbol: Accessory.symbol(productID: nil, name: name), title: name, color: .secondary, artwork: Accessory.image(productID: nil, name: name),
+                                    mark: "xmark.circle.fill", markColor: .secondary), seconds: 2.5)
+        }
+        system.onBattery = { [weak self] level, charging in self?.announceBattery(level, charging: charging) }
+        system.onBrightnessSet = { [weak self] in self?.brightnessWatcher.ignoreFor(1.5) }
+        system.onAwakeEnded = { [weak self] in
+            guard let self, self.preferences.allows(.awake) else { return }
+            self.showActivity(.init(symbol: "cup.and.saucer", title: "Veille de nouveau permise"), seconds: 4)
+        }
+        capsLock.onChange = { [weak self] on in
+            guard let self, self.preferences.allows(.capsLock) else { return }
+            self.showMinor(.capsLock(on), seconds: 1.4)
+        }
+        network.onChange = { [weak self] online in
+            guard let self, self.preferences.allows(.network) else { return }
+            self.showActivity(online ? .init(symbol: "wifi", title: "De nouveau en ligne", color: Theme.green)
+                                     : .init(symbol: "wifi.slash", title: "Hors ligne", color: .red), seconds: online ? 2.5 : 4)
+            if !online { Haptics.play(.generic) }
+        }
+        screenshots.onCapture = { [weak self] path in
+            guard let self, self.preferences.allows(.screenshot) else { return }
+            let video = ["mov", "mp4"].contains((path as NSString).pathExtension.lowercased())
+            self.showActivity(.init(symbol: video ? "record.circle" : "camera.viewfinder", title: video ? "Enregistrement sauvegardé" : "Capture enregistrée"), seconds: 2.5)
+        }
+        screenshots.onCopied = { [weak self] in
+            guard let self, self.preferences.allows(.screenshot) else { return }
+            self.showActivity(.init(symbol: "camera.viewfinder", title: "Capture copiée"), seconds: 2.5)
+        }
+        agents.onClaudeIdle = { [weak self] in
+            guard let self, self.preferences.allows(.claudeIdle) else { return }
+            self.showActivity(.init(symbol: "asterisk", title: "", color: Theme.orange, artwork: ClaudeMark.icon, mark: "bubble.left.fill", markColor: Theme.orange), seconds: 4)
+        }
+        agents.onShip = { [weak self] action, failed in
+            guard let self, self.preferences.allows(.claudeShipped) else { return }
+            self.showActivity(.init(symbol: "asterisk", title: failed ? action.failure : action.title, color: Theme.orange, artwork: ClaudeMark.icon,
+                                    mark: failed ? "xmark.octagon.fill" : action.symbol, markColor: failed ? .red : Theme.green), seconds: 3.5)
+            Haptics.play(failed ? .generic : .levelChange)
+        }
         preferences.$mediaRestMinutes.sink { [weak self] value in self?.media.restMinutes = value }.store(in: &subscriptions)
         media.$resting.dropFirst().removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         $hovering.dropFirst().removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
-        focus.onFinished = { [weak self] in self?.showActivity(.init(symbol: "checkmark.circle.fill", title: "Pomodoro terminé"), seconds: 10) }
+        focus.onFinished = { [weak self] in guard self?.preferences.allows(.timer) == true else { return }; self?.showActivity(.init(symbol: "checkmark.circle.fill", title: "Pomodoro terminé"), seconds: 10) }
         shelf.onAdded = { [weak self] count in self?.notify(L(count > 1 ? "%lld éléments ajoutés au dépôt" : "%lld élément ajouté au dépôt", count)) }
         // @Published sends before the property changes: register the value received, not the property.
         preferences.$hotKey.dropFirst().removeDuplicates().sink { [weak self] combo in self?.onHotKeyChange?(combo, false) }.store(in: &subscriptions)
@@ -237,7 +321,8 @@ struct NotchAmbient: Equatable {
             self?.onGeometryChange?()
         }.store(in: &subscriptions)
         $activity.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
-        $musicVolume.map { $0 != nil }.removeDuplicates().dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
+        // Only a change of kind changes the room it takes; a new level is drawn in place.
+        $minor.map { value -> Int in switch value { case nil: return 0; case .volume: return 1; case .brightness: return 2; case .capsLock: return 3 } }.removeDuplicates().dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         media.$track.map { $0 != nil }.removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         focus.$clock.map { $0.deadline != nil }.removeDuplicates().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         // Published values change after their publisher fires: the state is recomputed on the next turn of the run loop.
@@ -255,14 +340,16 @@ struct NotchAmbient: Equatable {
         }.store(in: &subscriptions)
         $ambient.dropFirst().sink { [weak self] _ in self?.onGeometryChange?() }.store(in: &subscriptions)
         // Countdowns (minutes before a meeting, awake time left) move without any publisher firing.
-        ambientTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in Task { @MainActor in self?.refreshAmbient() } }
+        ambientTimer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in Task { @MainActor in self?.refreshAmbient(); self?.announceStartingEvent() } }
         ambientTimer?.tolerance = 5
         shelf.start(retentionHours: preferences.retentionHours)
         media.start(); system.start(); agents.start(); focus.start(); calendar.start(); clipboard.start(); updates.start(); downloads.start()
+        capsLock.start(); network.start(); screenshots.start(); brightnessWatcher.start(); captureWatcher.start()
         cleanupTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { [weak self] _ in Task { @MainActor in guard let self else { return }; self.shelf.purge(hours: self.preferences.retentionHours) } }
     }
     func stop() {
-        notes.save(); media.stop(); system.stop(); agents.stop(); focus.stop(); calendar.stop(); camera.stop(); clipboard.stop(); bluetooth.cancel(); updates.stop(); downloads.stop(); cleanupTimer?.invalidate(); ambientTimer?.invalidate()
+        notes.save(); media.stop(); system.stop(); agents.stop(); focus.stop(); calendar.stop(); camera.stop(); clipboard.stop(); bluetooth.cancel(); updates.stop(); downloads.stop()
+        capsLock.stop(); network.stop(); screenshots.stop(); brightnessWatcher.stop(); captureWatcher.stop(); cleanupTimer?.invalidate(); ambientTimer?.invalidate()
     }
     func expand(tab: NotchTab? = nil) {
         if let tab { self.tab = tab } // A drop may reveal a tab hidden from the navigation.
@@ -288,7 +375,7 @@ struct NotchAmbient: Equatable {
     }
     /// Headphones that just connected appear in the notch at once; their battery follows when macOS knows it.
     private func announceHeadphones(_ name: String) {
-        guard preferences.showHUD else { return }
+        guard preferences.allows(.headphones) else { return }
         var card = NotchActivity(symbol: Accessory.symbol(productID: nil, name: name), title: name, artwork: Accessory.image(productID: nil, name: name))
         showActivity(card, seconds: 5)
         Task { [weak self] in
@@ -305,6 +392,46 @@ struct NotchAmbient: Equatable {
                 if info.summary != nil { return }
             }
         }
+    }
+    private func announceBrightness(_ level: Double) {
+        guard preferences.allows(.brightness), !expanded else { return }
+        system.brightness = level
+        showMinor(.brightness(level))
+    }
+    private func announceBattery(_ level: Int, charging: Bool) {
+        guard let event = batteryWatch.update(level: level, charging: charging), preferences.allows(.battery) else { return }
+        switch event {
+        case .full: showActivity(.init(symbol: "battery.100percent.bolt", title: "Batterie chargée", value: 1, color: Theme.green), seconds: 4)
+        case .low(let value):
+            showActivity(.init(symbol: value <= 10 ? "battery.0percent" : "battery.25percent", title: value <= 10 ? "Batterie très faible" : "Batterie faible",
+                               value: Double(value) / 100, color: .red), seconds: 6)
+            Haptics.play(.generic)
+        }
+    }
+    /// A microphone or a camera starts being used by another app.
+    private func announceCapture(_ old: CaptureWatcher.State, _ new: CaptureWatcher.State) {
+        if new.camera && !old.camera && !camera.active && preferences.allows(.camera) {
+            let app = NSWorkspace.shared.frontmostApplication.flatMap { $0.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : $0 }
+            showActivity(.init(symbol: "video.fill", title: app?.localizedName ?? "Caméra allumée", color: Theme.green, artwork: app?.icon, mark: "video.fill", markColor: Theme.green), seconds: 3)
+            return
+        }
+        guard preferences.allows(.microphone), let pid = new.microphone.first(where: { !old.microphone.contains($0) }) else { return }
+        // System listeners (Siri, dictation) belong to no app and are not announced.
+        guard let app = CaptureWatcher.app(for: pid) else { return }
+        // Another process of an app already announced (a browser tab after another) is not news.
+        let known = Set(old.microphone.compactMap { CaptureWatcher.app(for: $0)?.processIdentifier })
+        if known.contains(app.processIdentifier) { return }
+        showActivity(.init(symbol: "mic.fill", title: app.localizedName ?? "Micro utilisé", color: Theme.orange, artwork: app.icon, mark: "mic.fill", markColor: Theme.orange), seconds: 3)
+    }
+    /// A meeting starts: once, within its first minute.
+    private func announceStartingEvent(now: Date = Date()) {
+        guard preferences.allows(.calendar) else { return }
+        announcedEvents = announcedEvents.filter { now.timeIntervalSince($0.value) < 3600 }
+        func key(_ item: CalendarItem) -> String { item.id + "@\(item.start.timeIntervalSince1970)" }
+        guard let event = calendar.events.first(where: { !$0.allDay && $0.start <= now && now.timeIntervalSince($0.start) < 60 && announcedEvents[key($0)] == nil }) else { return }
+        announcedEvents[key(event)] = event.start
+        showActivity(.init(symbol: event.meeting == nil ? "calendar" : "video.fill", title: event.title.isEmpty ? L("Rendez-vous") : event.title, color: Color(nsColor: event.color)), seconds: 8)
+        Haptics.play(.levelChange)
     }
     /// How long the closed notch shows that Claude has started answering; the end of the answer is announced separately.
     static let claudeAnswerDisplay: TimeInterval = 5

@@ -18,6 +18,15 @@ import NotcherCore
     private var awakeTask: Task<Void, Never>?
     /// A Bluetooth output (headphones, AirPods) has just become the default one.
     var onHeadphones: ((String) -> Void)?
+    /// The Bluetooth output that was in use has been replaced by another one (headphones off or out of range).
+    var onHeadphonesGone: ((String) -> Void)?
+    /// Every reading of the battery, after the published values are up to date.
+    var onBattery: ((Int, Bool) -> Void)?
+    /// A timed awake period has run out.
+    var onAwakeEnded: (() -> Void)?
+    /// Notcher's own slider changed the brightness.
+    var onBrightnessSet: (() -> Void)?
+    private var bluetoothOutput: String?
     @Published var audioError: String?
     @Published var displayError: String?
     var onVolumeChange: ((Double, Bool) -> Void)?
@@ -45,6 +54,8 @@ import NotcherCore
                                       guard let self else { return }
                                       self.outputName = name; self.refresh()
                                       if bluetooth { self.onHeadphones?(name) }
+                                      else if let gone = self.bluetoothOutput { self.onHeadphonesGone?(gone) }
+                                      self.bluetoothOutput = bluetooth ? name : nil
                                   } })
         live.start(); observer = live
         refresh()
@@ -72,6 +83,7 @@ import NotcherCore
                 canSetVolume = snapshot.canSetVolume; canMute = snapshot.canMute
                 outputName = snapshot.outputName; battery = snapshot.battery; charging = snapshot.charging
                 initialized = true; audioError = nil; lastFailure = nil
+                if let battery { onBattery?(battery, charging) }
             } catch is CancellationError {} catch {
                 audioError = "Audio indisponible"; canSetVolume = false; canMute = false; lastFailure = Date()
             }
@@ -131,7 +143,7 @@ import NotcherCore
     }
     func changeBrightness(_ value: Double) {
         guard canSetBrightness else { return }
-        brightness = min(1, max(0, value)); brightnessTask?.cancel()
+        brightness = min(1, max(0, value)); brightnessTask?.cancel(); onBrightnessSet?()
         let target = brightness
         brightnessTask = Task {
             do {
@@ -166,7 +178,7 @@ import NotcherCore
             // Re-check instead of trusting one long sleep: the period may be extended or the Mac suspended.
             while !Task.isCancelled, let self, let until = self.awakeUntil, self.awake {
                 let left = until.timeIntervalSinceNow
-                if left <= 0 { self.stopAwake(); return }
+                if left <= 0 { self.stopAwake(); self.onAwakeEnded?(); return }
                 do { try await Task.sleep(for: .seconds(min(left, 30))) } catch { return }
             }
             _ = end

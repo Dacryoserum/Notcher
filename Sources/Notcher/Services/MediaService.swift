@@ -223,8 +223,10 @@ struct MediaClient: Sendable {
         if let current = value, current.isSpotify, current.artwork == nil, let cover = systemCover,
            cover.key.title == current.title, cover.key.artist == current.artist { value?.artwork = cover.data }
         sampledAt = now(); error = nil; available = true; failureCount = 0
-        // Another song while paused means someone is using the player: the pause starts over.
-        if track?.artworkKey != value?.artworkKey { pausedSince = nil }
+        // Another song while paused means someone is using the player: the pause starts over. A player found
+        // paused (left open in the background, or at Notcher's launch) has been resting all along.
+        if track == nil, let value, !value.playing { pausedSince = now() - Double(max(restMinutes, 1)) * 60 - 1 }
+        else if track?.artworkKey != value?.artworkKey { pausedSince = nil }
         if track != value { track = value }
         if let value { artworkService.update(value) } else { artworkService.clear() }
         updateRest()
